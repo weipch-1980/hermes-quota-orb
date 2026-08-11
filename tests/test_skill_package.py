@@ -11,6 +11,7 @@ import yaml
 
 ROOT = Path(__file__).parents[1]
 SKILL = ROOT / "skill" / "quota-orb" / "SKILL.md"
+PACKAGE_VERSION = "0.3.1"
 
 
 class SkillPackageTests(unittest.TestCase):
@@ -43,7 +44,7 @@ class SkillPackageTests(unittest.TestCase):
         frontmatter = yaml.safe_load(re.match(r"---\n(.*?)\n---\n", text, re.DOTALL).group(1))
         plugin_yaml = yaml.safe_load((ROOT / "hermes-plugin" / "plugin.yaml").read_text(encoding="utf-8"))
         manifest = json.loads((ROOT / "hermes-plugin" / "dashboard" / "manifest.json").read_text(encoding="utf-8"))
-        self.assertEqual(frontmatter["version"], "0.3.0")
+        self.assertEqual(frontmatter["version"], PACKAGE_VERSION)
         self.assertEqual(plugin_yaml["version"], frontmatter["version"])
         self.assertEqual(manifest["version"], frontmatter["version"])
         self.assertEqual(

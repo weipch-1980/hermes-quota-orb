@@ -1,4 +1,4 @@
-# Hermes Quota Orb v0.3.0
+# Hermes Quota Orb v0.3.1
 
 A local-first Hermes Desktop plugin that shows:
 
@@ -15,7 +15,7 @@ Quota Orb is an independent community project and is not an official Nous Resear
 ![Quota Orb preview](docs/quota-orb-preview.png)
 
 ![Hermes](https://img.shields.io/badge/Hermes-v0.20.0%2B-gold)
-![Quota Orb](https://img.shields.io/badge/Quota%20Orb-v0.3.0-emerald)
+![Quota Orb](https://img.shields.io/badge/Quota%20Orb-v0.3.1-emerald)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
 ## Data sources
@@ -90,17 +90,17 @@ python scripts/build_skill_package.py
 Outputs:
 
 ```text
-dist/quota-orb-skill-v0.3.0.zip
-dist/quota-orb-skill-v0.3.0.sha256
+dist/quota-orb-skill-v0.3.1.zip
+dist/quota-orb-skill-v0.3.1.sha256
 ```
 
 The archive contains only `skill/quota-orb` content, in sorted order with fixed timestamps; `__pycache__` directories and `*.pyc` files are excluded.
 
 ## Artifact Attestation
 
-Publishing a future GitHub Release automatically rebuilds its tag and attaches an Artifact Attestation only after the rebuilt ZIP's SHA-256 exactly matches the ZIP already published in that Release. A mismatch fails closed before attestation.
+For `v0.3.1` and later, pushing a release tag triggers native GitHub Actions CI: the runner tests the checked-out tag, builds the ZIP and SHA-256 sidecar once, verifies the tag against the builder version and the sidecar against the ZIP, attests that CI-built ZIP, then creates the GitHub Release with those same two assets. Any integrity-gate failure stops before attestation or publication.
 
-To add provenance for an existing tag (including `v0.3.0`), run the **Attest release package** workflow manually with that tag. Verify a downloaded release ZIP with:
+The existing `v0.3.0` Release remains unchanged and has no Artifact Attestation; this workflow never rebuilds or modifies historical releases. Verify a downloaded release ZIP with:
 
 ```bash
 gh attestation verify <zip> -R weipch-1980/hermes-quota-orb

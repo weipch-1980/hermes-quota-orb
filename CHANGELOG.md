@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.1
+
+- Changed only supply-chain release automation: pushed tags now run CI-native tests, build the release ZIP and SHA-256 sidecar, verify integrity, attest the CI-built ZIP, and create the Release with those same assets.
+- Preserved the `0.3.0` Release history unchanged; it is not retroactively attested.
+
 ## 0.3.0
 
 - Added the third-generation emerald crystal quota orb with double-layer thick glass, dual-track refraction, and provider-derived liquid levels.

@@ -1,36 +1,36 @@
-name: Attest release package
+name: Build, attest, and publish release
 
 on:
-  release:
-    types: [published]
-  workflow_dispatch:
-    inputs:
-      tag:
-        description: Existing release tag to rebuild and attest
-        required: true
-        type: string
-        default: v0.3.0
+  push:
+    tags: ['v*']
 
 permissions:
-  contents: read
+  contents: write
   id-token: write
   attestations: write
 
 jobs:
-  attest-release-package:
+  build-attest-publish:
     runs-on: windows-latest
     steps:
-      - name: Check out selected release tag
+      - name: Check out pushed tag
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event.release.tag_name || inputs.tag }}
+          ref: ${{ github.ref }}
 
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.11'
 
-      - name: Rebuild the release package
+      - name: Test release sources
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python -m unittest discover -s tests -v
+          node --check desktop-plugin/plugin.js
+
+      - name: Build release package
         id: build
         shell: pwsh
         run: |
@@ -41,34 +41,67 @@ jobs:
           python scripts/build_skill_package.py --output-dir dist
           $archives = @(Get-ChildItem -LiteralPath dist -Filter '*.zip' -File)
           if ($archives.Count -ne 1) {
-            throw "Expected exactly one rebuilt ZIP, found $($archives.Count)."
+            throw "Expected exactly one release ZIP, found $($archives.Count)."
+          }
+          $checksums = @(Get-ChildItem -LiteralPath dist -Filter '*.sha256' -File)
+          if ($checksums.Count -ne 1) {
+            throw "Expected exactly one release SHA-256 sidecar, found $($checksums.Count)."
           }
           $archive = $archives[0]
+          $checksum = $checksums[0]
           "archive_path=$($archive.FullName)" >> $env:GITHUB_OUTPUT
           "archive_name=$($archive.Name)" >> $env:GITHUB_OUTPUT
+          "checksum_path=$($checksum.FullName)" >> $env:GITHUB_OUTPUT
+          "checksum_name=$($checksum.Name)" >> $env:GITHUB_OUTPUT
 
-      - name: Download published ZIP and verify SHA-256
+      - name: Verify tag, package name, and SHA-256 sidecar
         shell: pwsh
         env:
-          GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          ARCHIVE_PATH: ${{ steps.build.outputs.archive_path }}
           ARCHIVE_NAME: ${{ steps.build.outputs.archive_name }}
+          CHECKSUM_PATH: ${{ steps.build.outputs.checksum_path }}
+          CHECKSUM_NAME: ${{ steps.build.outputs.checksum_name }}
         run: |
           $ErrorActionPreference = 'Stop'
-          $releaseDir = Join-Path $env:RUNNER_TEMP 'published-release'
-          New-Item -ItemType Directory -Path $releaseDir -Force | Out-Null
-          gh release download $env:RELEASE_TAG --repo '${{ github.repository }}' --pattern $env:ARCHIVE_NAME --dir $releaseDir
-          $publishedArchives = @(Get-ChildItem -LiteralPath $releaseDir -Filter $env:ARCHIVE_NAME -File)
-          if ($publishedArchives.Count -ne 1) {
-            throw "Expected exactly one published ZIP, found $($publishedArchives.Count)."
+          $builderSource = Get-Content -LiteralPath scripts/build_skill_package.py -Raw
+          $versionMatch = [regex]::Match($builderSource, '(?m)^VERSION\s*=\s*"(?<version>[0-9]+\.[0-9]+\.[0-9]+)"\s*$')
+          if (-not $versionMatch.Success) {
+            throw 'Could not determine builder package version.'
           }
-          $rebuiltHash = (Get-FileHash -LiteralPath '${{ steps.build.outputs.archive_path }}' -Algorithm SHA256).Hash
-          $publishedHash = (Get-FileHash -LiteralPath $publishedArchives[0].FullName -Algorithm SHA256).Hash
-          if ($rebuiltHash -ne $publishedHash) {
-            throw "SHA-256 hash mismatch: rebuilt package does not match the published release ZIP."
+          $expectedTag = "v$($versionMatch.Groups['version'].Value)"
+          if ($env:RELEASE_TAG -ne $expectedTag) {
+            throw "Release tag must equal v plus builder package version: expected $expectedTag, got $env:RELEASE_TAG."
+          }
+          $expectedArchiveName = "quota-orb-skill-v$($versionMatch.Groups['version'].Value).zip"
+          $expectedChecksumName = "quota-orb-skill-v$($versionMatch.Groups['version'].Value).sha256"
+          if ($env:ARCHIVE_NAME -ne $expectedArchiveName -or $env:CHECKSUM_NAME -ne $expectedChecksumName) {
+            throw "Release artifact names do not match builder package version $($versionMatch.Groups['version'].Value)."
+          }
+          $sidecar = (Get-Content -LiteralPath $env:CHECKSUM_PATH -Raw).Trim()
+          $sidecarMatch = [regex]::Match($sidecar, '^(?<hash>[A-Fa-f0-9]{64})  (?<filename>[^\\/]+)$')
+          if (-not $sidecarMatch.Success -or $sidecarMatch.Groups['filename'].Value -ne $env:ARCHIVE_NAME) {
+            throw 'SHA-256 sidecar must declare the unique release ZIP filename.'
+          }
+          $actualHash = (Get-FileHash -LiteralPath $env:ARCHIVE_PATH -Algorithm SHA256).Hash
+          if ($sidecarMatch.Groups['hash'].Value -ine $actualHash) {
+            throw 'SHA-256 sidecar does not match the release ZIP.'
           }
 
-      - name: Attest rebuilt release package
+      - name: Attest CI-built release package
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-path: ${{ steps.build.outputs.archive_path }}
+
+      - name: Publish GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          ARCHIVE_PATH: ${{ steps.build.outputs.archive_path }}
+          ARCHIVE_NAME: ${{ steps.build.outputs.archive_name }}
+          CHECKSUM_PATH: ${{ steps.build.outputs.checksum_path }}
+          CHECKSUM_NAME: ${{ steps.build.outputs.checksum_name }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          gh release create $env:RELEASE_TAG $env:ARCHIVE_PATH $env:CHECKSUM_PATH --verify-tag --title "Quota Orb $env:RELEASE_TAG" --generate-notes

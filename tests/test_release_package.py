@@ -13,6 +13,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).parents[1]
 SCRIPT = ROOT / "scripts" / "build_skill_package.py"
+PACKAGE_VERSION = "0.3.1"
+PACKAGE_ARCHIVE = f"quota-orb-skill-v{PACKAGE_VERSION}.zip"
 
 
 def load_builder():
@@ -27,10 +29,11 @@ class ReleasePackageTests(unittest.TestCase):
     def test_builds_reproducible_skill_zip_and_checksum(self):
         self.assertTrue(SCRIPT.is_file())
         module = load_builder()
+        self.assertEqual(module.VERSION, PACKAGE_VERSION)
         with tempfile.TemporaryDirectory() as first, tempfile.TemporaryDirectory() as second:
             archive_a, checksum_a = module.build(repository_root=ROOT, output_dir=Path(first))
             archive_b, checksum_b = module.build(repository_root=ROOT, output_dir=Path(second))
-            self.assertEqual(archive_a.name, "quota-orb-skill-v0.3.0.zip")
+            self.assertEqual(archive_a.name, PACKAGE_ARCHIVE)
             self.assertEqual(hashlib.sha256(archive_a.read_bytes()).digest(), hashlib.sha256(archive_b.read_bytes()).digest())
             self.assertEqual(checksum_a.read_text(encoding="utf-8"), checksum_b.read_text(encoding="utf-8"))
             digest, filename = checksum_a.read_text(encoding="utf-8").strip().split("  ", 1)
@@ -70,7 +73,7 @@ class ReleasePackageTests(unittest.TestCase):
             output = root / "dist"
             with self.assertRaises(ValueError):
                 module.build(repository_root=repository, output_dir=output)
-            self.assertFalse((output / "quota-orb-skill-v0.3.0.zip").exists())
+            self.assertFalse((output / PACKAGE_ARCHIVE).exists())
 
     def test_build_rejects_source_content_mutation_with_unchanged_identity(self):
         module = load_builder()
@@ -131,7 +134,7 @@ class ReleasePackageTests(unittest.TestCase):
             self.assertTrue(mutated)
             self.assertEqual(after.st_size, before.st_size)
             self.assertEqual(after.st_mtime_ns, before.st_mtime_ns)
-            self.assertFalse((output / "quota-orb-skill-v0.3.0.zip").exists())
+            self.assertFalse((output / PACKAGE_ARCHIVE).exists())
 
 
 if __name__ == "__main__":
