@@ -1,0 +1,74 @@
+name: Attest release package
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag to rebuild and attest
+        required: true
+        type: string
+        default: v0.3.0
+
+permissions:
+  contents: read
+  id-token: write
+  attestations: write
+
+jobs:
+  attest-release-package:
+    runs-on: windows-latest
+    steps:
+      - name: Check out selected release tag
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.release.tag_name || inputs.tag }}
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.11'
+
+      - name: Rebuild the release package
+        id: build
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (Test-Path -LiteralPath dist) {
+            Remove-Item -LiteralPath dist -Recurse -Force
+          }
+          python scripts/build_skill_package.py --output-dir dist
+          $archives = @(Get-ChildItem -LiteralPath dist -Filter '*.zip' -File)
+          if ($archives.Count -ne 1) {
+            throw "Expected exactly one rebuilt ZIP, found $($archives.Count)."
+          }
+          $archive = $archives[0]
+          "archive_path=$($archive.FullName)" >> $env:GITHUB_OUTPUT
+          "archive_name=$($archive.Name)" >> $env:GITHUB_OUTPUT
+
+      - name: Download published ZIP and verify SHA-256
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+          ARCHIVE_NAME: ${{ steps.build.outputs.archive_name }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $releaseDir = Join-Path $env:RUNNER_TEMP 'published-release'
+          New-Item -ItemType Directory -Path $releaseDir -Force | Out-Null
+          gh release download $env:RELEASE_TAG --repo '${{ github.repository }}' --pattern $env:ARCHIVE_NAME --dir $releaseDir
+          $publishedArchives = @(Get-ChildItem -LiteralPath $releaseDir -Filter $env:ARCHIVE_NAME -File)
+          if ($publishedArchives.Count -ne 1) {
+            throw "Expected exactly one published ZIP, found $($publishedArchives.Count)."
+          }
+          $rebuiltHash = (Get-FileHash -LiteralPath '${{ steps.build.outputs.archive_path }}' -Algorithm SHA256).Hash
+          $publishedHash = (Get-FileHash -LiteralPath $publishedArchives[0].FullName -Algorithm SHA256).Hash
+          if ($rebuiltHash -ne $publishedHash) {
+            throw "SHA-256 hash mismatch: rebuilt package does not match the published release ZIP."
+          }
+
+      - name: Attest rebuilt release package
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: ${{ steps.build.outputs.archive_path }}

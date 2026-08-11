@@ -96,6 +96,16 @@ dist/quota-orb-skill-v0.3.0.sha256
 
 The archive contains only `skill/quota-orb` content, in sorted order with fixed timestamps; `__pycache__` directories and `*.pyc` files are excluded.
 
+## Artifact Attestation
+
+Publishing a future GitHub Release automatically rebuilds its tag and attaches an Artifact Attestation only after the rebuilt ZIP's SHA-256 exactly matches the ZIP already published in that Release. A mismatch fails closed before attestation.
+
+To add provenance for an existing tag (including `v0.3.0`), run the **Attest release package** workflow manually with that tag. Verify a downloaded release ZIP with:
+
+```bash
+gh attestation verify <zip> -R weipch-1980/hermes-quota-orb
+```
+
 ## Repository layout
 
 ```text
