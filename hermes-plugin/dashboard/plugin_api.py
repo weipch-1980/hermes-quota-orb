@@ -51,6 +51,40 @@ def aggregate_daily_usage(connection: Any, *, start_ts: float, end_ts: float) ->
     totals["total_tokens"] = totals["input_tokens"] + totals["output_tokens"]
     totals["provider"] = next((item["provider"] for item in by_model if item["provider"]), "")
     totals["by_model"] = by_model
+
+    provider_groups: dict[str, dict[str, Any]] = {}
+    for item in by_model:
+        provider = str(item["provider"] or "unknown")
+        group = provider_groups.setdefault(
+            provider,
+            {
+                "provider": provider,
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "cache_read_tokens": 0,
+                "reasoning_tokens": 0,
+                "api_calls": 0,
+                "sessions": 0,
+                "total_tokens": 0,
+                "models": [],
+            },
+        )
+        for key in (
+            "input_tokens",
+            "output_tokens",
+            "cache_read_tokens",
+            "reasoning_tokens",
+            "api_calls",
+            "sessions",
+            "total_tokens",
+        ):
+            group[key] += int(item[key] or 0)
+        group["models"].append(item)
+    totals["by_provider"] = sorted(
+        provider_groups.values(),
+        key=lambda item: item["total_tokens"],
+        reverse=True,
+    )
     return totals
 
 

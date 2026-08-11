@@ -1,6 +1,6 @@
 name: quota-orb
-version: 0.1.0
-description: Read-only provider quota and local daily token totals for Hermes Desktop.
+version: 0.3.0
+description: Crystal quota orb with provider and model usage for Hermes Desktop.
 author: weipch-1980, Hermes Agent
 kind: backend
 platforms:

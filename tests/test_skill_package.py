@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 import unittest
 from pathlib import Path
@@ -29,12 +30,26 @@ class SkillPackageTests(unittest.TestCase):
     def test_skill_assets_match_development_sources(self):
         pairs = [
             (ROOT / "desktop-plugin" / "plugin.js", ROOT / "skill" / "quota-orb" / "assets" / "desktop-plugin" / "plugin.js"),
+            (ROOT / "hermes-plugin" / "plugin.yaml", ROOT / "skill" / "quota-orb" / "assets" / "hermes-plugin" / "plugin.yaml"),
             (ROOT / "hermes-plugin" / "dashboard" / "manifest.json", ROOT / "skill" / "quota-orb" / "assets" / "hermes-plugin" / "dashboard" / "manifest.json"),
             (ROOT / "hermes-plugin" / "dashboard" / "plugin_api.py", ROOT / "skill" / "quota-orb" / "assets" / "hermes-plugin" / "dashboard" / "plugin_api.py"),
         ]
         for source, asset in pairs:
             with self.subTest(asset=asset.name):
                 self.assertEqual(hashlib.sha256(source.read_bytes()).digest(), hashlib.sha256(asset.read_bytes()).digest())
+
+    def test_release_version_and_license_are_consistent(self):
+        text = SKILL.read_text(encoding="utf-8")
+        frontmatter = yaml.safe_load(re.match(r"---\n(.*?)\n---\n", text, re.DOTALL).group(1))
+        plugin_yaml = yaml.safe_load((ROOT / "hermes-plugin" / "plugin.yaml").read_text(encoding="utf-8"))
+        manifest = json.loads((ROOT / "hermes-plugin" / "dashboard" / "manifest.json").read_text(encoding="utf-8"))
+        self.assertEqual(frontmatter["version"], "0.3.0")
+        self.assertEqual(plugin_yaml["version"], frontmatter["version"])
+        self.assertEqual(manifest["version"], frontmatter["version"])
+        self.assertEqual(
+            hashlib.sha256((ROOT / "LICENSE").read_bytes()).digest(),
+            hashlib.sha256((SKILL.parent / "LICENSE").read_bytes()).digest(),
+        )
 
 
 if __name__ == "__main__":

@@ -111,6 +111,10 @@ class DailyUsageTests(unittest.TestCase):
         self.assertEqual(result["provider"], "openai-codex")
         self.assertEqual(result["by_model"][0]["model"], "gpt-5.6")
         self.assertEqual(result["by_model"][0]["total_tokens"], 180)
+        self.assertEqual([item["provider"] for item in result["by_provider"]], ["openai-codex", "anthropic"])
+        self.assertEqual(result["by_provider"][0]["total_tokens"], 180)
+        self.assertEqual(result["by_provider"][0]["models"][0]["model"], "gpt-5.6")
+        self.assertEqual(result["by_provider"][1]["models"][0]["model"], "claude")
 
     def test_build_snapshot_keeps_daily_totals_when_quota_is_unavailable(self):
         module = load_module()
