@@ -23,6 +23,12 @@ jobs:
         with:
           python-version: '3.11'
 
+      - name: Install MCP runtime
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python -m pip install --disable-pip-version-check .
+
       - name: Test release sources
         shell: pwsh
         run: |
@@ -30,7 +36,7 @@ jobs:
           python -m unittest discover -s tests -v
           node --check desktop-plugin/plugin.js
 
-      - name: Build release package
+      - name: Build release packages
         id: build
         shell: pwsh
         run: |
@@ -39,29 +45,47 @@ jobs:
             Remove-Item -LiteralPath dist -Recurse -Force
           }
           python scripts/build_skill_package.py --output-dir dist
+          python scripts/build_universal_package.py --output-dir dist
+
           $archives = @(Get-ChildItem -LiteralPath dist -Filter '*.zip' -File)
-          if ($archives.Count -ne 1) {
-            throw "Expected exactly one release ZIP, found $($archives.Count)."
+          if ($archives.Count -ne 2) {
+            throw "Expected exactly two release ZIPs, found $($archives.Count)."
           }
           $checksums = @(Get-ChildItem -LiteralPath dist -Filter '*.sha256' -File)
-          if ($checksums.Count -ne 1) {
-            throw "Expected exactly one release SHA-256 sidecar, found $($checksums.Count)."
+          if ($checksums.Count -ne 2) {
+            throw "Expected exactly two release SHA-256 sidecars, found $($checksums.Count)."
           }
-          $archive = $archives[0]
-          $checksum = $checksums[0]
-          "archive_path=$($archive.FullName)" >> $env:GITHUB_OUTPUT
-          "archive_name=$($archive.Name)" >> $env:GITHUB_OUTPUT
-          "checksum_path=$($checksum.FullName)" >> $env:GITHUB_OUTPUT
-          "checksum_name=$($checksum.Name)" >> $env:GITHUB_OUTPUT
 
-      - name: Verify tag, package name, and SHA-256 sidecar
+          $skillArchives = @(Get-ChildItem -LiteralPath dist -Filter 'quota-orb-skill-v*.zip' -File)
+          $skillChecksums = @(Get-ChildItem -LiteralPath dist -Filter 'quota-orb-skill-v*.sha256' -File)
+          $universalArchives = @(Get-ChildItem -LiteralPath dist -Filter 'quota-orb-universal-v*.zip' -File)
+          $universalChecksums = @(Get-ChildItem -LiteralPath dist -Filter 'quota-orb-universal-v*.sha256' -File)
+          if ($skillArchives.Count -ne 1 -or $skillChecksums.Count -ne 1 -or
+              $universalArchives.Count -ne 1 -or $universalChecksums.Count -ne 1) {
+            throw 'Expected one ZIP and one SHA-256 sidecar for each release package.'
+          }
+
+          "skill_archive_path=$($skillArchives[0].FullName)" >> $env:GITHUB_OUTPUT
+          "skill_archive_name=$($skillArchives[0].Name)" >> $env:GITHUB_OUTPUT
+          "skill_checksum_path=$($skillChecksums[0].FullName)" >> $env:GITHUB_OUTPUT
+          "skill_checksum_name=$($skillChecksums[0].Name)" >> $env:GITHUB_OUTPUT
+          "universal_archive_path=$($universalArchives[0].FullName)" >> $env:GITHUB_OUTPUT
+          "universal_archive_name=$($universalArchives[0].Name)" >> $env:GITHUB_OUTPUT
+          "universal_checksum_path=$($universalChecksums[0].FullName)" >> $env:GITHUB_OUTPUT
+          "universal_checksum_name=$($universalChecksums[0].Name)" >> $env:GITHUB_OUTPUT
+
+      - name: Verify tag, package names, and SHA-256 sidecars
         shell: pwsh
         env:
           RELEASE_TAG: ${{ github.ref_name }}
-          ARCHIVE_PATH: ${{ steps.build.outputs.archive_path }}
-          ARCHIVE_NAME: ${{ steps.build.outputs.archive_name }}
-          CHECKSUM_PATH: ${{ steps.build.outputs.checksum_path }}
-          CHECKSUM_NAME: ${{ steps.build.outputs.checksum_name }}
+          SKILL_ARCHIVE_PATH: ${{ steps.build.outputs.skill_archive_path }}
+          SKILL_ARCHIVE_NAME: ${{ steps.build.outputs.skill_archive_name }}
+          SKILL_CHECKSUM_PATH: ${{ steps.build.outputs.skill_checksum_path }}
+          SKILL_CHECKSUM_NAME: ${{ steps.build.outputs.skill_checksum_name }}
+          UNIVERSAL_ARCHIVE_PATH: ${{ steps.build.outputs.universal_archive_path }}
+          UNIVERSAL_ARCHIVE_NAME: ${{ steps.build.outputs.universal_archive_name }}
+          UNIVERSAL_CHECKSUM_PATH: ${{ steps.build.outputs.universal_checksum_path }}
+          UNIVERSAL_CHECKSUM_NAME: ${{ steps.build.outputs.universal_checksum_name }}
         run: |
           $ErrorActionPreference = 'Stop'
           $builderSource = Get-Content -LiteralPath scripts/build_skill_package.py -Raw
@@ -69,39 +93,62 @@ jobs:
           if (-not $versionMatch.Success) {
             throw 'Could not determine builder package version.'
           }
-          $expectedTag = "v$($versionMatch.Groups['version'].Value)"
+          $version = $versionMatch.Groups['version'].Value
+          $expectedTag = "v$version"
           if ($env:RELEASE_TAG -ne $expectedTag) {
             throw "Release tag must equal v plus builder package version: expected $expectedTag, got $env:RELEASE_TAG."
           }
-          $expectedArchiveName = "quota-orb-skill-v$($versionMatch.Groups['version'].Value).zip"
-          $expectedChecksumName = "quota-orb-skill-v$($versionMatch.Groups['version'].Value).sha256"
-          if ($env:ARCHIVE_NAME -ne $expectedArchiveName -or $env:CHECKSUM_NAME -ne $expectedChecksumName) {
-            throw "Release artifact names do not match builder package version $($versionMatch.Groups['version'].Value)."
-          }
-          $sidecar = (Get-Content -LiteralPath $env:CHECKSUM_PATH -Raw).Trim()
-          $sidecarMatch = [regex]::Match($sidecar, '^(?<hash>[A-Fa-f0-9]{64})  (?<filename>[^\\/]+)$')
-          if (-not $sidecarMatch.Success -or $sidecarMatch.Groups['filename'].Value -ne $env:ARCHIVE_NAME) {
-            throw 'SHA-256 sidecar must declare the unique release ZIP filename.'
-          }
-          $actualHash = (Get-FileHash -LiteralPath $env:ARCHIVE_PATH -Algorithm SHA256).Hash
-          if ($sidecarMatch.Groups['hash'].Value -ine $actualHash) {
-            throw 'SHA-256 sidecar does not match the release ZIP.'
+
+          $expectedSkillArchive = "quota-orb-skill-v$version.zip"
+          $expectedSkillChecksum = "quota-orb-skill-v$version.sha256"
+          $expectedUniversalArchive = "quota-orb-universal-v$version.zip"
+          $expectedUniversalChecksum = "quota-orb-universal-v$version.sha256"
+          if ($env:SKILL_ARCHIVE_NAME -ne $expectedSkillArchive -or
+              $env:SKILL_CHECKSUM_NAME -ne $expectedSkillChecksum -or
+              $env:UNIVERSAL_ARCHIVE_NAME -ne $expectedUniversalArchive -or
+              $env:UNIVERSAL_CHECKSUM_NAME -ne $expectedUniversalChecksum) {
+            throw "Release artifact names do not match builder package version $version."
           }
 
-      - name: Attest CI-built release package
+          function Assert-Sidecar {
+            param(
+              [Parameter(Mandatory)] [string] $ArchivePath,
+              [Parameter(Mandatory)] [string] $ArchiveName,
+              [Parameter(Mandatory)] [string] $ChecksumPath
+            )
+            $sidecar = (Get-Content -LiteralPath $ChecksumPath -Raw).Trim()
+            $sidecarMatch = [regex]::Match($sidecar, '^(?<hash>[A-Fa-f0-9]{64})  (?<filename>[^\\/]+)$')
+            if (-not $sidecarMatch.Success -or $sidecarMatch.Groups['filename'].Value -ne $ArchiveName) {
+              throw "SHA-256 sidecar must declare its release ZIP filename: $ArchiveName."
+            }
+            $actualHash = (Get-FileHash -LiteralPath $ArchivePath -Algorithm SHA256).Hash
+            if ($sidecarMatch.Groups['hash'].Value -ine $actualHash) {
+              throw "SHA-256 sidecar does not match release ZIP: $ArchiveName."
+            }
+          }
+
+          Assert-Sidecar -ArchivePath $env:SKILL_ARCHIVE_PATH -ArchiveName $env:SKILL_ARCHIVE_NAME -ChecksumPath $env:SKILL_CHECKSUM_PATH
+          Assert-Sidecar -ArchivePath $env:UNIVERSAL_ARCHIVE_PATH -ArchiveName $env:UNIVERSAL_ARCHIVE_NAME -ChecksumPath $env:UNIVERSAL_CHECKSUM_PATH
+
+      - name: Attest CI-built Hermes Skill package
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
-          subject-path: ${{ steps.build.outputs.archive_path }}
+          subject-path: ${{ steps.build.outputs.skill_archive_path }}
+
+      - name: Attest CI-built Universal package
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: ${{ steps.build.outputs.universal_archive_path }}
 
       - name: Publish GitHub Release
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.ref_name }}
-          ARCHIVE_PATH: ${{ steps.build.outputs.archive_path }}
-          ARCHIVE_NAME: ${{ steps.build.outputs.archive_name }}
-          CHECKSUM_PATH: ${{ steps.build.outputs.checksum_path }}
-          CHECKSUM_NAME: ${{ steps.build.outputs.checksum_name }}
+          SKILL_ARCHIVE_PATH: ${{ steps.build.outputs.skill_archive_path }}
+          SKILL_CHECKSUM_PATH: ${{ steps.build.outputs.skill_checksum_path }}
+          UNIVERSAL_ARCHIVE_PATH: ${{ steps.build.outputs.universal_archive_path }}
+          UNIVERSAL_CHECKSUM_PATH: ${{ steps.build.outputs.universal_checksum_path }}
         run: |
           $ErrorActionPreference = 'Stop'
-          gh release create $env:RELEASE_TAG $env:ARCHIVE_PATH $env:CHECKSUM_PATH --verify-tag --title "Quota Orb $env:RELEASE_TAG" --generate-notes
+          gh release create $env:RELEASE_TAG $env:SKILL_ARCHIVE_PATH $env:SKILL_CHECKSUM_PATH $env:UNIVERSAL_ARCHIVE_PATH $env:UNIVERSAL_CHECKSUM_PATH --verify-tag --title "Quota Orb $env:RELEASE_TAG" --generate-notes

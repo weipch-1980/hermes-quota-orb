@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "quota-orb": {
+      "command": "python",
+      "args": ["-m", "quota_orb.mcp_server", "--transport", "stdio"],
+      "env": {
+        "QUOTA_ORB_SNAPSHOT_FILE": "<absolute-path-to-snapshot.json>"
+      }
+    }
+  }
+}

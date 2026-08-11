@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "quota-orb"
+version = "0.4.0"
+description = "Read-only quota snapshots for MCP-compatible AI clients."
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [{name = "weipch-1980"}]
+dependencies = [
+  "mcp==1.28.1",
+]
+
+[project.scripts]
+quota-orb-mcp = "quota_orb.mcp_server:main"
+quota-orb-widget = "quota_orb.desktop_widget:main"
+
+[tool.setuptools.packages.find]
+include = ["quota_orb*"]
+
+[tool.setuptools.package-data]
+quota_orb = ["assets/*.html", "examples/*.json"]

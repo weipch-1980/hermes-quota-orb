@@ -44,63 +44,72 @@ class AttestationWorkflowTests(unittest.TestCase):
         self.assertNotIn("secrets.", self.text)
         self.assertIn("GH_TOKEN: ${{ github.token }}", self.text)
 
-    def test_ci_checks_out_the_pushed_tag_and_runs_checks_before_building(self):
+    def test_ci_checks_out_tag_and_runs_all_checks_before_both_builders(self):
         self.assertIn("runs-on: windows-latest", self.text)
         self.assertIn(f"actions/checkout@{CHECKOUT_SHA}", self.text)
         self.assertIn(f"actions/setup-python@{SETUP_PYTHON_SHA}", self.text)
-        self.assertIn(f"actions/attest@{ATTEST_SHA}", self.text)
+        self.assertEqual(self.text.count(f"actions/attest@{ATTEST_SHA}"), 2)
         self.assertIn("ref: ${{ github.ref }}", self.text)
         self.assertRegex(self.text, r'''python-version:\s*["']?3\.11["']?''')
-        self.assertIn("python -m unittest discover -s tests -v", self.text)
-        self.assertIn("node --check desktop-plugin/plugin.js", self.text)
-
+        self.assertIn("python -m pip install --disable-pip-version-check .", self.text)
+        install_position = self.text.index("python -m pip install --disable-pip-version-check .")
         tests_position = self.text.index("python -m unittest discover -s tests -v")
         node_position = self.text.index("node --check desktop-plugin/plugin.js")
-        build_position = self.text.index("python scripts/build_skill_package.py --output-dir dist")
+        skill_position = self.text.index("python scripts/build_skill_package.py --output-dir dist")
+        universal_position = self.text.index("python scripts/build_universal_package.py --output-dir dist")
+        self.assertLess(install_position, tests_position)
         self.assertLess(tests_position, node_position)
-        self.assertLess(node_position, build_position)
+        self.assertLess(node_position, skill_position)
+        self.assertLess(skill_position, universal_position)
 
-    def test_build_exports_exactly_one_archive_and_checksum_for_later_steps(self):
-        self.assertIn("python scripts/build_skill_package.py --output-dir dist", self.text)
-        self.assertIn("Get-ChildItem -LiteralPath dist -Filter '*.zip' -File", self.text)
-        self.assertIn("Get-ChildItem -LiteralPath dist -Filter '*.sha256' -File", self.text)
-        self.assertGreaterEqual(self.text.count("Count -ne 1"), 2)
-        for output in ("archive_path", "archive_name", "checksum_path", "checksum_name"):
-            self.assertIn(f'"{output}=', self.text)
+    def test_build_exports_exactly_two_archives_and_two_checksums(self):
+        self.assertIn("Expected exactly two release ZIPs", self.text)
+        self.assertIn("Expected exactly two release SHA-256 sidecars", self.text)
+        self.assertGreaterEqual(self.text.count("Count -ne 2"), 2)
+        for prefix in ("skill", "universal"):
+            for suffix in ("archive_path", "archive_name", "checksum_path", "checksum_name"):
+                self.assertIn(f'"{prefix}_{suffix}=', self.text)
         self.assertIn("$env:GITHUB_OUTPUT", self.text)
 
-    def test_integrity_gate_binds_tag_sidecar_and_archive_before_attestation(self):
+    def test_integrity_gate_binds_tag_names_and_both_sidecars(self):
         self.assertIn("RELEASE_TAG: ${{ github.ref_name }}", self.text)
-        self.assertIn("ARCHIVE_PATH: ${{ steps.build.outputs.archive_path }}", self.text)
-        self.assertIn("CHECKSUM_PATH: ${{ steps.build.outputs.checksum_path }}", self.text)
-        self.assertIn("Get-FileHash -LiteralPath $env:ARCHIVE_PATH -Algorithm SHA256", self.text)
-        self.assertIn("Get-Content -LiteralPath $env:CHECKSUM_PATH -Raw", self.text)
+        for prefix in ("SKILL", "UNIVERSAL"):
+            self.assertIn(f"{prefix}_ARCHIVE_PATH: ${{{{ steps.build.outputs.{prefix.lower()}_archive_path }}}}", self.text)
+            self.assertIn(f"{prefix}_CHECKSUM_PATH: ${{{{ steps.build.outputs.{prefix.lower()}_checksum_path }}}}", self.text)
+        self.assertIn("quota-orb-skill-v$version.zip", self.text)
+        self.assertIn("quota-orb-universal-v$version.zip", self.text)
+        self.assertIn("function Assert-Sidecar", self.text)
+        self.assertGreaterEqual(self.text.count("Assert-Sidecar -ArchivePath"), 2)
+        self.assertIn("Get-FileHash -LiteralPath $ArchivePath -Algorithm SHA256", self.text)
         self.assertIn("^VERSION\\s*=", self.text)
-        self.assertIn('$expectedTag = "v$($versionMatch.Groups[\'version\'].Value)"', self.text)
+        self.assertIn('$expectedTag = "v$version"', self.text)
         self.assertIn("if ($env:RELEASE_TAG -ne $expectedTag)", self.text)
-        self.assertRegex(self.text, r"(?i)sidecar.*SHA-256|SHA-256.*sidecar")
 
-    def test_attestation_precedes_release_creation_and_publish_uses_same_outputs(self):
-        self.assertIn("subject-path: ${{ steps.build.outputs.archive_path }}", self.text)
-        self.assertIn("ARCHIVE_NAME: ${{ steps.build.outputs.archive_name }}", self.text)
-        self.assertIn("CHECKSUM_NAME: ${{ steps.build.outputs.checksum_name }}", self.text)
-        self.assertIn(
-            "gh release create $env:RELEASE_TAG $env:ARCHIVE_PATH $env:CHECKSUM_PATH",
-            self.text,
+    def test_both_attestations_precede_single_non_clobbering_release(self):
+        self.assertIn("subject-path: ${{ steps.build.outputs.skill_archive_path }}", self.text)
+        self.assertIn("subject-path: ${{ steps.build.outputs.universal_archive_path }}", self.text)
+        release_command = (
+            "gh release create $env:RELEASE_TAG $env:SKILL_ARCHIVE_PATH "
+            "$env:SKILL_CHECKSUM_PATH $env:UNIVERSAL_ARCHIVE_PATH "
+            "$env:UNIVERSAL_CHECKSUM_PATH"
         )
+        self.assertIn(release_command, self.text)
         self.assertIn("--verify-tag", self.text)
         self.assertIn("--generate-notes", self.text)
         self.assertNotIn("--clobber", self.text)
         self.assertNotIn("gh release upload", self.text)
         self.assertNotIn("gh release delete", self.text)
 
-        build_position = self.text.index("python scripts/build_skill_package.py --output-dir dist")
-        gate_position = self.text.index("Get-FileHash -LiteralPath $env:ARCHIVE_PATH -Algorithm SHA256")
-        attest_position = self.text.index(f"actions/attest@{ATTEST_SHA}")
+        gate_position = self.text.index("Get-FileHash -LiteralPath $ArchivePath -Algorithm SHA256")
+        attest_positions = [
+            match.start()
+            for match in re.finditer(f"actions/attest@{ATTEST_SHA}", self.text)
+        ]
         release_position = self.text.index("gh release create $env:RELEASE_TAG")
-        self.assertLess(build_position, gate_position)
-        self.assertLess(gate_position, attest_position)
-        self.assertLess(attest_position, release_position)
+        self.assertEqual(len(attest_positions), 2)
+        self.assertLess(gate_position, attest_positions[0])
+        self.assertLess(attest_positions[0], attest_positions[1])
+        self.assertLess(attest_positions[1], release_position)
 
 
 if __name__ == "__main__":

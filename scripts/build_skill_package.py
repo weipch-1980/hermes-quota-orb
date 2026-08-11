@@ -3,13 +3,15 @@ from __future__ import annotations
 import argparse
 import hashlib
 import os
+import secrets
 import stat
 import tempfile
 import zipfile
+from contextlib import contextmanager
 from pathlib import Path
 
 
-VERSION = "0.3.1"
+VERSION = "0.4.0"
 PACKAGE_NAME = f"quota-orb-skill-v{VERSION}"
 ARCHIVE_ROOT = "quota-orb"
 FIXED_TIMESTAMP = (1980, 1, 1, 0, 0, 0)
@@ -74,6 +76,213 @@ def _assert_safe_directory(path: Path, resolved_root: Path, label: str) -> os.st
     return info
 
 
+def _prepare_safe_output_directory(path: Path) -> os.stat_result:
+    chain: list[Path] = []
+    current = path
+    while True:
+        chain.append(current)
+        if current.parent == current:
+            break
+        current = current.parent
+
+    def inspect_existing() -> None:
+        for item in reversed(chain):
+            if not os.path.lexists(item):
+                continue
+            info = _lstat(item, "output directory")
+            if _is_link_or_reparse(item, info) or not stat.S_ISDIR(info.st_mode):
+                raise UnsafePackagePathError(
+                    f"Output directory contains an unsafe ancestor: {item}"
+                )
+
+    inspect_existing()
+    try:
+        path.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise UnsafePackagePathError(f"Cannot safely create output directory: {path}") from exc
+    inspect_existing()
+    return _lstat(path, "output directory")
+
+
+@contextmanager
+def _windows_directory_handle(path: Path):
+    import ctypes
+    from ctypes import wintypes
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    create_file = kernel32.CreateFileW
+    create_file.argtypes = [
+        wintypes.LPCWSTR,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        wintypes.LPVOID,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        wintypes.HANDLE,
+    ]
+    create_file.restype = wintypes.HANDLE
+    close_handle = kernel32.CloseHandle
+    close_handle.argtypes = [wintypes.HANDLE]
+    close_handle.restype = wintypes.BOOL
+
+    file_read_attributes = 0x00000080
+    delete_access = 0x00010000
+    file_share_read = 0x00000001
+    file_share_write = 0x00000002
+    open_existing = 3
+    file_flag_backup_semantics = 0x02000000
+    file_flag_open_reparse_point = 0x00200000
+    handle = create_file(
+        str(path),
+        file_read_attributes | delete_access,
+        file_share_read | file_share_write,
+        None,
+        open_existing,
+        file_flag_backup_semantics | file_flag_open_reparse_point,
+        None,
+    )
+    invalid_handle = ctypes.c_void_p(-1).value
+    handle_value = getattr(handle, "value", handle)
+    if handle_value in (-1, invalid_handle):
+        error = ctypes.get_last_error()
+        raise UnsafePackagePathError(
+            f"Cannot safely lock output directory: {path} (WinError {error})"
+        )
+    try:
+        yield handle
+    finally:
+        close_handle(handle)
+
+
+def _location_identity(info: os.stat_result) -> tuple[int, int, int]:
+    return info.st_dev, info.st_ino, stat.S_IFMT(info.st_mode)
+
+
+def _assert_output_descriptor_matches(path: Path, descriptor: int) -> None:
+    try:
+        path_info = os.lstat(path)
+        descriptor_info = os.fstat(descriptor)
+    except OSError as exc:
+        raise UnsafePackagePathError(
+            f"Cannot safely revalidate output directory: {path}"
+        ) from exc
+    if (
+        _is_link_or_reparse(path, path_info)
+        or not stat.S_ISDIR(descriptor_info.st_mode)
+        or _location_identity(path_info) != _location_identity(descriptor_info)
+    ):
+        raise UnsafePackagePathError(
+            f"Output directory changed while being secured: {path}"
+        )
+
+
+@contextmanager
+def _output_directory_guard(path: Path):
+    _prepare_safe_output_directory(path)
+    if os.name == "nt":
+        with _windows_directory_handle(path):
+            _prepare_safe_output_directory(path)
+            yield None
+        return
+
+    required_flags = ("O_DIRECTORY", "O_NOFOLLOW")
+    if any(not hasattr(os, name) for name in required_flags):
+        raise UnsafePackagePathError(
+            "Platform cannot safely lock output directory without following links"
+        )
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+    try:
+        descriptor = os.open(path, flags)
+    except OSError as exc:
+        raise UnsafePackagePathError(
+            f"Cannot safely lock output directory: {path}"
+        ) from exc
+    try:
+        _assert_output_descriptor_matches(path, descriptor)
+        _prepare_safe_output_directory(path)
+        _assert_output_descriptor_matches(path, descriptor)
+        yield descriptor
+    finally:
+        os.close(descriptor)
+
+
+def _create_output_temporary(
+    destination: Path,
+    parent_descriptor: int | None,
+) -> tuple[int, Path]:
+    if parent_descriptor is None:
+        descriptor, name = tempfile.mkstemp(
+            prefix=f".{destination.name}.",
+            suffix=".tmp",
+            dir=destination.parent,
+        )
+        return descriptor, Path(name)
+
+    flags = (
+        os.O_RDWR
+        | os.O_CREAT
+        | os.O_EXCL
+        | getattr(os, "O_BINARY", 0)
+        | os.O_NOFOLLOW
+    )
+    for _ in range(128):
+        name = f".{destination.name}.{secrets.token_hex(16)}.tmp"
+        try:
+            descriptor = os.open(name, flags, 0o600, dir_fd=parent_descriptor)
+        except FileExistsError:
+            continue
+        return descriptor, destination.parent / name
+    raise UnsafePackagePathError(
+        f"Cannot allocate a unique temporary output file for: {destination}"
+    )
+
+
+def _replace_output(
+    temporary: Path,
+    destination: Path,
+    parent_descriptor: int | None,
+) -> None:
+    if parent_descriptor is None:
+        os.replace(temporary, destination)
+        return
+    os.replace(
+        temporary.name,
+        destination.name,
+        src_dir_fd=parent_descriptor,
+        dst_dir_fd=parent_descriptor,
+    )
+
+
+def _unlink_output_temporary(
+    temporary: Path,
+    parent_descriptor: int | None,
+) -> None:
+    try:
+        if parent_descriptor is None:
+            temporary.unlink()
+        else:
+            os.unlink(temporary.name, dir_fd=parent_descriptor)
+    except FileNotFoundError:
+        pass
+
+
+def _read_output_file(path: Path, parent_descriptor: int | None) -> bytes:
+    if parent_descriptor is None:
+        return path.read_bytes()
+    flags = os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_BINARY", 0)
+    descriptor = os.open(path.name, flags, dir_fd=parent_descriptor)
+    try:
+        info = os.fstat(descriptor)
+        if not stat.S_ISREG(info.st_mode):
+            raise UnsafePackagePathError(f"Output is not a regular file: {path}")
+        with os.fdopen(descriptor, "rb", closefd=True) as stream:
+            descriptor = -1
+            return stream.read()
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+
+
 def _read_regular_file_no_follow(
     path: Path,
     resolved_root: Path,
@@ -115,6 +324,7 @@ def _skill_payloads(
     skill_root: Path,
     excluded_root: Path | None,
     excluded_paths: set[Path],
+    archive_root: str = ARCHIVE_ROOT,
 ) -> list[tuple[str, bytes]]:
     resolved_root = skill_root.resolve(strict=True)
     _assert_safe_directory(skill_root, resolved_root, "Skill root")
@@ -156,7 +366,7 @@ def _skill_payloads(
             elif stat.S_ISREG(info.st_mode):
                 payloads.append(
                     (
-                        f"{ARCHIVE_ROOT}/{relative.as_posix()}",
+                        f"{archive_root}/{relative.as_posix()}",
                         _read_regular_file_no_follow(path, resolved_root, "Skill source"),
                     )
                 )
@@ -188,27 +398,49 @@ def _zip_info(archive_name: str) -> zipfile.ZipInfo:
     return info
 
 
-def _write_atomic(path: Path, content: bytes) -> None:
-    descriptor, temp_name = tempfile.mkstemp(
-        prefix=f".{path.name}.",
-        suffix=".tmp",
-        dir=path.parent,
-    )
-    temporary = Path(temp_name)
+def _write_atomic(
+    path: Path,
+    content: bytes,
+    parent_descriptor: int | None,
+) -> None:
+    descriptor, temporary = _create_output_temporary(path, parent_descriptor)
     try:
         with os.fdopen(descriptor, "wb", closefd=True) as stream:
             descriptor = -1
             stream.write(content)
             stream.flush()
             os.fsync(stream.fileno())
-        os.replace(temporary, path)
+        _replace_output(temporary, path, parent_descriptor)
     finally:
         if descriptor >= 0:
             os.close(descriptor)
-        try:
-            temporary.unlink()
-        except FileNotFoundError:
-            pass
+        _unlink_output_temporary(temporary, parent_descriptor)
+
+
+def _write_zip_atomic(
+    archive: Path,
+    payloads: list[tuple[str, bytes]],
+    parent_descriptor: int | None,
+) -> None:
+    descriptor, temporary = _create_output_temporary(archive, parent_descriptor)
+    try:
+        with os.fdopen(descriptor, "w+b", closefd=True) as stream:
+            descriptor = -1
+            with zipfile.ZipFile(
+                stream,
+                mode="w",
+                compression=zipfile.ZIP_DEFLATED,
+                compresslevel=9,
+            ) as bundle:
+                for archive_name, content in payloads:
+                    bundle.writestr(_zip_info(archive_name), content)
+            stream.flush()
+            os.fsync(stream.fileno())
+        _replace_output(temporary, archive, parent_descriptor)
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+        _unlink_output_temporary(temporary, parent_descriptor)
 
 
 def build(repository_root: Path | str, output_dir: Path | str) -> tuple[Path, Path]:
@@ -233,32 +465,16 @@ def build(repository_root: Path | str, output_dir: Path | str) -> tuple[Path, Pa
         excluded_paths={archive, checksum},
     )
 
-    output_dir.mkdir(parents=True, exist_ok=True)
-    descriptor, temp_name = tempfile.mkstemp(
-        prefix=f".{archive.name}.",
-        suffix=".tmp",
-        dir=output_dir,
-    )
-    os.close(descriptor)
-    temporary_archive = Path(temp_name)
-    try:
-        with zipfile.ZipFile(
-            temporary_archive,
-            mode="w",
-            compression=zipfile.ZIP_DEFLATED,
-            compresslevel=9,
-        ) as bundle:
-            for archive_name, content in payloads:
-                bundle.writestr(_zip_info(archive_name), content)
-        os.replace(temporary_archive, archive)
-    finally:
-        try:
-            temporary_archive.unlink()
-        except FileNotFoundError:
-            pass
-
-    digest = hashlib.sha256(archive.read_bytes()).hexdigest()
-    _write_atomic(checksum, f"{digest}  {archive.name}\n".encode("utf-8"))
+    with _output_directory_guard(output_dir) as output_descriptor:
+        _write_zip_atomic(archive, payloads, output_descriptor)
+        digest = hashlib.sha256(
+            _read_output_file(archive, output_descriptor)
+        ).hexdigest()
+        _write_atomic(
+            checksum,
+            f"{digest}  {archive.name}\n".encode("utf-8"),
+            output_descriptor,
+        )
     return archive, checksum
 
 

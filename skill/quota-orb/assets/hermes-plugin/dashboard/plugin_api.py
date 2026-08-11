@@ -116,6 +116,16 @@ def build_snapshot(
         "day": start.date().isoformat(),
         "today": today,
         "quota": quota,
+        "tokenBilling": {
+            "available": False,
+            "source": None,
+            "usage": None,
+            "allowance": None,
+            "cost": None,
+            "unavailable_reason": (
+                "No official Token billing source is available. Local Token totals are not an invoice."
+            ),
+        },
     }
 
 
@@ -148,7 +158,7 @@ def serialize_account_snapshot(snapshot: Any) -> dict[str, Any]:
         )
 
     return {
-        "available": bool(getattr(snapshot, "available", False)),
+        "available": getattr(snapshot, "available", False) is True,
         "provider": getattr(snapshot, "provider", None),
         "source": getattr(snapshot, "source", None),
         "fetched_at": _iso(getattr(snapshot, "fetched_at", None)),

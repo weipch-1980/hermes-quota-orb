@@ -11,7 +11,7 @@ import yaml
 
 ROOT = Path(__file__).parents[1]
 SKILL = ROOT / "skill" / "quota-orb" / "SKILL.md"
-PACKAGE_VERSION = "0.3.1"
+PACKAGE_VERSION = "0.4.0"
 
 
 class SkillPackageTests(unittest.TestCase):

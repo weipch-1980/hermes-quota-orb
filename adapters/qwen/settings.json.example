@@ -1,0 +1,18 @@
+{
+  "mcpServers": {
+    "quota-orb": {
+      "command": "python",
+      "args": ["-m", "quota_orb.mcp_server", "--transport", "stdio"],
+      "env": {
+        "QUOTA_ORB_SNAPSHOT_FILE": "<absolute-path-to-snapshot.json>"
+      },
+      "includeTools": [
+        "get_quota_snapshot",
+        "get_daily_usage",
+        "get_supported_sources"
+      ],
+      "trust": false,
+      "description": "Read-only provider quota and local usage snapshots."
+    }
+  }
+}

@@ -1,7 +1,7 @@
 ---
 name: quota-orb
 description: Install and verify the Hermes Desktop quota orb.
-version: 0.3.1
+version: 0.4.0
 author: weipch-1980, Hermes Agent
 license: MIT
 platforms: [linux, macos, windows]

@@ -10,10 +10,12 @@ import unittest
 import zipfile
 from pathlib import Path
 
+from _windows_output_parent_swap import WindowsOutputDirectoryParentSwap
+
 
 ROOT = Path(__file__).parents[1]
 SCRIPT = ROOT / "scripts" / "build_skill_package.py"
-PACKAGE_VERSION = "0.3.1"
+PACKAGE_VERSION = "0.4.0"
 PACKAGE_ARCHIVE = f"quota-orb-skill-v{PACKAGE_VERSION}.zip"
 
 
@@ -74,6 +76,58 @@ class ReleasePackageTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 module.build(repository_root=repository, output_dir=output)
             self.assertFalse((output / PACKAGE_ARCHIVE).exists())
+
+    def test_build_blocks_parent_swap_before_junction_creation(self):
+        if os.name != "nt":
+            self.skipTest("Windows output-directory swap test")
+        module = load_builder()
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            output = root / "dist"
+            moved = root / "dist-moved"
+            outside = root / "outside"
+            output.mkdir()
+            outside.mkdir()
+            attack = WindowsOutputDirectoryParentSwap(
+                output_directory=output,
+                moved_directory=moved,
+                external_directory=outside,
+                archive_name=PACKAGE_ARCHIVE,
+                sidecar_name=f"{module.PACKAGE_NAME}.sha256",
+            )
+            original_replace = module.os.replace
+            module.os.replace = attack.wrap(original_replace)
+            archive = checksum = None
+            build_error = None
+            try:
+                try:
+                    archive, checksum = module.build(repository_root=ROOT, output_dir=output)
+                except Exception as exc:
+                    build_error = exc
+            finally:
+                module.os.replace = original_replace
+            try:
+                if attack.rename_succeeded:
+                    self.assertTrue(attack.junction_attempted)
+                    self.assertTrue(attack.junction_created, attack.junction_result)
+                    self.assertTrue(attack.junction_points_to_external, attack.junction_result)
+                    self.assertEqual(attack.external_outputs(), ())
+                    self.fail("output directory rename unexpectedly succeeded")
+
+                if build_error is not None:
+                    raise build_error
+                self.assertTrue(attack.rename_attempted)
+                self.assertIsNotNone(attack.rename_error)
+                self.assertIn(attack.rename_error.winerror, (5, 32))
+                self.assertFalse(attack.junction_attempted)
+                self.assertFalse(attack.junction_created)
+                self.assertFalse(attack.junction_points_to_external)
+                self.assertIsNotNone(archive)
+                self.assertIsNotNone(checksum)
+                self.assertTrue(archive.is_file())
+                self.assertTrue(checksum.is_file())
+            finally:
+                attack.cleanup()
 
     def test_build_rejects_source_content_mutation_with_unchanged_identity(self):
         module = load_builder()

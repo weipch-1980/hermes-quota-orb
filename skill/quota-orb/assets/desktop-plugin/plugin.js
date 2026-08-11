@@ -85,7 +85,15 @@ const emptySnapshot = {
     by_model: [],
     by_provider: []
   },
-  quota: { available: false, windows: [], details: [] }
+  quota: { available: false, windows: [], details: [] },
+  tokenBilling: {
+    available: false,
+    source: null,
+    usage: null,
+    allowance: null,
+    cost: null,
+    unavailable_reason: 'No official token billing source is configured.'
+  }
 }
 
 function finite(value) {
@@ -94,6 +102,19 @@ function finite(value) {
 
 function clampPercent(value) {
   return finite(value) ? Math.max(0, Math.min(100, value)) : null
+}
+
+function liquidTone(remaining) {
+  const clamped = clampPercent(remaining)
+  if (clamped === null) return { state: 'unknown', color: 'var(--ui-text-tertiary)' }
+  if (clamped < 30) return { state: 'red', color: 'var(--ui-danger, oklch(0.64 0.23 25))' }
+  if (clamped < 50) return { state: 'yellow', color: 'var(--ui-warning, oklch(0.78 0.16 82))' }
+  return { state: 'green', color: 'var(--ui-green, var(--ui-accent))' }
+}
+
+function liquidGradient(remaining) {
+  const color = liquidTone(remaining).color
+  return `linear-gradient(90deg, color-mix(in srgb, ${color} 55%, transparent), ${color})`
 }
 
 function liquidGeometry(remaining) {
@@ -106,16 +127,23 @@ function liquidGeometry(remaining) {
 }
 
 function lowestRemaining(snapshot) {
-  const values = (snapshot?.quota?.windows || [])
+  const quotaWindows = snapshot?.quota?.available === true && Array.isArray(snapshot.quota.windows)
+    ? snapshot.quota.windows
+    : []
+  const values = quotaWindows
     .map(window => window.remaining_percent)
     .filter(finite)
+  const tokenRemaining = snapshot?.tokenBilling?.available === true
+    ? snapshot?.tokenBilling?.allowance?.remaining_percent
+    : null
+  if (finite(tokenRemaining)) values.push(tokenRemaining)
   return values.length ? Math.min(...values) : null
 }
 
 function toneFor(remaining) {
   if (!finite(remaining)) return 'muted'
-  if (remaining <= 10) return 'bad'
-  if (remaining <= 30) return 'warn'
+  if (remaining < 30) return 'bad'
+  if (remaining < 50) return 'warn'
   return 'good'
 }
 
@@ -135,7 +163,9 @@ function formatReset(value) {
 
 function reportText(snapshot, t) {
   const today = snapshot?.today || emptySnapshot.today
-  const windows = snapshot?.quota?.windows || []
+  const windows = snapshot?.quota?.available === true && Array.isArray(snapshot.quota.windows)
+    ? snapshot.quota.windows
+    : []
   const quota = windows.length
     ? windows.map(window => {
         const remaining = clampPercent(window.remaining_percent)
@@ -205,6 +235,7 @@ function useQuotaData() {
 
 function CrystalQuotaOrb({ remaining, label, ariaLabel, subLabel }) {
   const { clamped, surfaceY, fillDepth, waveAmplitude, hasLiquid } = liquidGeometry(remaining)
+  const liquidColor = liquidTone(remaining).color
   const backSurface = `M -82 ${surfaceY + waveAmplitude * 0.12} C -70 ${surfaceY - waveAmplitude} -57 ${surfaceY - waveAmplitude * 0.72} -46 ${surfaceY + waveAmplitude * 0.12} C -34 ${surfaceY + waveAmplitude * 0.72} -21 ${surfaceY + waveAmplitude * 0.56} -10 ${surfaceY - waveAmplitude * 0.12} C 2 ${surfaceY - waveAmplitude} 15 ${surfaceY - waveAmplitude * 0.72} 26 ${surfaceY + waveAmplitude * 0.12} C 38 ${surfaceY + waveAmplitude * 0.72} 51 ${surfaceY + waveAmplitude * 0.56} 62 ${surfaceY - waveAmplitude * 0.12} C 74 ${surfaceY - waveAmplitude} 87 ${surfaceY - waveAmplitude * 0.72} 98 ${surfaceY + waveAmplitude * 0.12} C 110 ${surfaceY + waveAmplitude * 0.72} 123 ${surfaceY + waveAmplitude * 0.56} 134 ${surfaceY - waveAmplitude * 0.12} C 146 ${surfaceY - waveAmplitude} 159 ${surfaceY - waveAmplitude * 0.72} 170 ${surfaceY + waveAmplitude * 0.12}`
   const backWave = `${backSurface} V 96 H -82 Z`
   const frontSurface = `M -82 ${surfaceY + waveAmplitude * 0.24} C -67 ${surfaceY + waveAmplitude * 0.86} -55 ${surfaceY + waveAmplitude * 0.58} -43 ${surfaceY - waveAmplitude * 0.24} C -31 ${surfaceY - waveAmplitude} -17 ${surfaceY - waveAmplitude * 0.5} -6 ${surfaceY + waveAmplitude * 0.36} C 7 ${surfaceY + waveAmplitude} 19 ${surfaceY + waveAmplitude * 0.62} 31 ${surfaceY - waveAmplitude * 0.36} C 43 ${surfaceY - waveAmplitude} 57 ${surfaceY - waveAmplitude * 0.5} 66 ${surfaceY + waveAmplitude * 0.36} C 79 ${surfaceY + waveAmplitude} 91 ${surfaceY + waveAmplitude * 0.62} 103 ${surfaceY - waveAmplitude * 0.36} C 115 ${surfaceY - waveAmplitude} 129 ${surfaceY - waveAmplitude * 0.5} 138 ${surfaceY + waveAmplitude * 0.36} C 151 ${surfaceY + waveAmplitude} 163 ${surfaceY + waveAmplitude * 0.62} 175 ${surfaceY - waveAmplitude * 0.36}`
@@ -221,7 +252,7 @@ function CrystalQuotaOrb({ remaining, label, ariaLabel, subLabel }) {
     'aria-valuemin': 0,
     'aria-valuemax': 100,
     'aria-valuenow': clamped === null ? undefined : clamped,
-    style: { width: '106px', height: '106px' },
+    style: { width: '106px', height: '106px', '--quota-orb-liquid': liquidColor },
     children: [
       jsx('style', {
         children: `
@@ -251,10 +282,11 @@ function CrystalQuotaOrb({ remaining, label, ariaLabel, subLabel }) {
           .quota-orb-bubble:nth-of-type(3) { animation-delay: -3.2s; animation-duration: 4.3s; }
           .quota-orb-shell { transition: transform 220ms ease, filter 220ms ease; transform-style: preserve-3d; }
           .quota-orb-shell:hover { transform: perspective(420px) rotateX(-7deg) rotateY(9deg) scale(1.055); }
-          .quota-orb-shell:focus-visible { outline: 2px solid var(--ui-green, var(--ui-accent)); outline-offset: 3px; }
-          .quota-orb-language-option:focus-visible { outline: 2px solid var(--ui-green, var(--ui-accent)); outline-offset: 2px; }
+          .quota-orb-shell:focus-visible { outline: 2px solid var(--quota-orb-liquid, var(--ui-green, var(--ui-accent))); outline-offset: 3px; }
+          .quota-orb-language-option:focus-visible { outline: 2px solid var(--quota-orb-liquid, var(--ui-green, var(--ui-accent))); outline-offset: 2px; }
           .quota-orb-panel-sheen { transform: rotate(18deg); opacity: 0.28; }
           .quota-orb-detail-panel { scrollbar-color: var(--ui-stroke-primary) transparent; scrollbar-width: thin; }
+          .quota-orb-readable-meta { color: var(--ui-text-secondary); font-weight: 500; }
           .quota-orb-section { position: relative; padding: 11px 1px 2px; border-top: 1px solid color-mix(in srgb, var(--ui-stroke-secondary) 72%, transparent); }
           @media (prefers-reduced-motion: reduce) {
             .quota-orb-wave-back, .quota-orb-wave-front, .quota-orb-surface-line, .quota-orb-wave-glint, .quota-orb-bubble { animation: none !important; }
@@ -295,7 +327,7 @@ function CrystalQuotaOrb({ remaining, label, ariaLabel, subLabel }) {
                   jsx('stop', { offset: '0%', stopColor: 'var(--ui-text-primary)', stopOpacity: 0.3 }),
                   jsx('stop', { offset: '28%', stopColor: 'var(--ui-text-secondary)', stopOpacity: 0.09 }),
                   jsx('stop', { offset: '67%', stopColor: 'var(--ui-bg-editor)', stopOpacity: 0.12 }),
-                  jsx('stop', { offset: '88%', stopColor: 'var(--ui-green, var(--ui-accent))', stopOpacity: clamped === null ? 0.08 : 0.34 }),
+                  jsx('stop', { offset: '88%', stopColor: 'var(--quota-orb-liquid, var(--ui-green, var(--ui-accent)))', stopOpacity: clamped === null ? 0.08 : 0.34 }),
                   jsx('stop', { offset: '100%', stopColor: 'var(--ui-text-primary)', stopOpacity: 0.6 })
                 ]
               }),
@@ -307,7 +339,7 @@ function CrystalQuotaOrb({ remaining, label, ariaLabel, subLabel }) {
                 children: [
                   jsx('stop', { offset: '0%', stopColor: 'var(--ui-text-primary)', stopOpacity: 0 }),
                   jsx('stop', { offset: '68%', stopColor: 'var(--ui-text-primary)', stopOpacity: 0.02 }),
-                  jsx('stop', { offset: '88%', stopColor: 'var(--ui-green, var(--ui-accent))', stopOpacity: clamped === null ? 0.05 : 0.24 }),
+                  jsx('stop', { offset: '88%', stopColor: 'var(--quota-orb-liquid, var(--ui-green, var(--ui-accent)))', stopOpacity: clamped === null ? 0.05 : 0.24 }),
                   jsx('stop', { offset: '100%', stopColor: 'var(--ui-text-primary)', stopOpacity: 0.72 })
                 ]
               }),
@@ -320,7 +352,7 @@ function CrystalQuotaOrb({ remaining, label, ariaLabel, subLabel }) {
                 children: [
                   jsx('stop', { offset: '0%', stopColor: 'var(--ui-text-primary)', stopOpacity: 0.92 }),
                   jsx('stop', { offset: '35%', stopColor: 'var(--ui-text-secondary)', stopOpacity: 0.22 }),
-                  jsx('stop', { offset: '72%', stopColor: 'var(--ui-green, var(--ui-accent))', stopOpacity: clamped === null ? 0.14 : 0.86 }),
+                  jsx('stop', { offset: '72%', stopColor: 'var(--quota-orb-liquid, var(--ui-green, var(--ui-accent)))', stopOpacity: clamped === null ? 0.14 : 0.86 }),
                   jsx('stop', { offset: '100%', stopColor: 'var(--ui-text-primary)', stopOpacity: 0.72 })
                 ]
               }),
@@ -332,7 +364,7 @@ function CrystalQuotaOrb({ remaining, label, ariaLabel, subLabel }) {
                 y2: '88%',
                 children: [
                   jsx('stop', { offset: '0%', stopColor: 'var(--ui-bg-editor)', stopOpacity: 0.9 }),
-                  jsx('stop', { offset: '36%', stopColor: 'var(--ui-green, var(--ui-accent))', stopOpacity: 0.52 }),
+                  jsx('stop', { offset: '36%', stopColor: 'var(--quota-orb-liquid, var(--ui-green, var(--ui-accent)))', stopOpacity: 0.52 }),
                   jsx('stop', { offset: '68%', stopColor: 'var(--ui-text-primary)', stopOpacity: 0.26 }),
                   jsx('stop', { offset: '100%', stopColor: 'var(--ui-bg-editor)', stopOpacity: 0.76 })
                 ]
@@ -344,9 +376,9 @@ function CrystalQuotaOrb({ remaining, label, ariaLabel, subLabel }) {
                 x2: '0%',
                 y2: '100%',
                 children: [
-                  jsx('stop', { offset: '0%', stopColor: 'var(--ui-green, var(--ui-accent))', stopOpacity: 0.98 }),
-                  jsx('stop', { offset: '42%', stopColor: 'var(--ui-green, var(--ui-accent))', stopOpacity: 0.82 }),
-                  jsx('stop', { offset: '100%', stopColor: 'var(--ui-green, var(--ui-accent))', stopOpacity: 0.42 })
+                  jsx('stop', { offset: '0%', stopColor: 'var(--quota-orb-liquid, var(--ui-green, var(--ui-accent)))', stopOpacity: 0.98 }),
+                  jsx('stop', { offset: '42%', stopColor: 'var(--quota-orb-liquid, var(--ui-green, var(--ui-accent)))', stopOpacity: 0.82 }),
+                  jsx('stop', { offset: '100%', stopColor: 'var(--quota-orb-liquid, var(--ui-green, var(--ui-accent)))', stopOpacity: 0.42 })
                 ]
               }),
               jsxs('radialGradient', {
@@ -356,7 +388,7 @@ function CrystalQuotaOrb({ remaining, label, ariaLabel, subLabel }) {
                 r: '88%',
                 children: [
                   jsx('stop', { offset: '0%', stopColor: 'var(--ui-bg-editor)', stopOpacity: 0.42 }),
-                  jsx('stop', { offset: '38%', stopColor: 'var(--ui-green, var(--ui-accent))', stopOpacity: 0.12 }),
+                  jsx('stop', { offset: '38%', stopColor: 'var(--quota-orb-liquid, var(--ui-green, var(--ui-accent)))', stopOpacity: 0.12 }),
                   jsx('stop', { offset: '100%', stopColor: 'var(--ui-text-quaternary)', stopOpacity: 0.2 })
                 ]
               }),
@@ -369,7 +401,7 @@ function CrystalQuotaOrb({ remaining, label, ariaLabel, subLabel }) {
                 children: [
                   jsx('stop', { offset: '0%', stopColor: 'var(--ui-text-primary)', stopOpacity: 0.08 }),
                   jsx('stop', { offset: '38%', stopColor: 'var(--ui-text-primary)', stopOpacity: 0.82 }),
-                  jsx('stop', { offset: '62%', stopColor: 'var(--ui-green, var(--ui-accent))', stopOpacity: 0.42 }),
+                  jsx('stop', { offset: '62%', stopColor: 'var(--quota-orb-liquid, var(--ui-green, var(--ui-accent)))', stopOpacity: 0.42 }),
                   jsx('stop', { offset: '100%', stopColor: 'var(--ui-text-primary)', stopOpacity: 0.04 })
                 ]
               }),
@@ -379,8 +411,8 @@ function CrystalQuotaOrb({ remaining, label, ariaLabel, subLabel }) {
                 cy: '100%',
                 r: '70%',
                 children: [
-                  jsx('stop', { offset: '0%', stopColor: 'var(--ui-green, var(--ui-accent))', stopOpacity: 0.68 }),
-                  jsx('stop', { offset: '100%', stopColor: 'var(--ui-green, var(--ui-accent))', stopOpacity: 0 })
+                  jsx('stop', { offset: '0%', stopColor: 'var(--quota-orb-liquid, var(--ui-green, var(--ui-accent)))', stopOpacity: 0.68 }),
+                  jsx('stop', { offset: '100%', stopColor: 'var(--quota-orb-liquid, var(--ui-green, var(--ui-accent)))', stopOpacity: 0 })
                 ]
               }),
               jsxs('filter', {
@@ -463,7 +495,7 @@ function CrystalQuotaOrb({ remaining, label, ariaLabel, subLabel }) {
                       children: [
                         jsx('rect', { className: 'quota-orb-liquid-body', x: 8, y: surfaceY, width: 76, height: fillDepth, fill: 'url(#quota-orb-liquid)' }),
                         jsx('ellipse', { className: 'quota-orb-liquid-volume', cx: 46, cy: Math.min(78, surfaceY + fillDepth * 0.5), rx: 35, ry: Math.min(24, fillDepth * 0.48), fill: 'url(#quota-orb-liquid-volume)', opacity: 0.72 }),
-                        jsx('ellipse', { className: 'quota-orb-water-glow', cx: 46, cy: Math.min(80, surfaceY + fillDepth * 0.58), rx: 29, ry: Math.min(16, fillDepth * 0.38), fill: 'var(--ui-green, var(--ui-accent))', opacity: 0.2 }),
+                        jsx('ellipse', { className: 'quota-orb-water-glow', cx: 46, cy: Math.min(80, surfaceY + fillDepth * 0.58), rx: 29, ry: Math.min(16, fillDepth * 0.38), fill: 'var(--quota-orb-liquid, var(--ui-green, var(--ui-accent)))', opacity: 0.2 }),
                         jsx('path', { className: 'quota-orb-emerald-swirl-back', d: emeraldSwirlBack, fill: 'none', stroke: 'url(#quota-orb-water-film)', strokeWidth: 1.15, strokeLinecap: 'round', opacity: 0.44 }),
                         jsx('path', { className: 'quota-orb-emerald-swirl-front', d: emeraldSwirlFront, fill: 'none', stroke: 'url(#quota-orb-water-film)', strokeWidth: 1.55, strokeLinecap: 'round', opacity: 0.82 }),
                         jsx('ellipse', { className: 'quota-orb-inner-caustic', cx: 46, cy: 80, rx: 31, ry: 18, fill: 'url(#quota-orb-caustic)', opacity: 0.72 }),
@@ -476,9 +508,9 @@ function CrystalQuotaOrb({ remaining, label, ariaLabel, subLabel }) {
                       ]
                     }),
                     jsx('ellipse', { className: 'quota-orb-liquid-lens', cx: 46, cy: surfaceY + 1, rx: 33, ry: 4.6, fill: 'url(#quota-orb-water-film)', opacity: 0.3 }),
-                    jsx('path', { className: 'quota-orb-wave-back', d: backWave, fill: 'var(--ui-green, var(--ui-accent))', opacity: 0.52 }),
+                    jsx('path', { className: 'quota-orb-wave-back', d: backWave, fill: 'var(--quota-orb-liquid, var(--ui-green, var(--ui-accent)))', opacity: 0.52 }),
                     jsx('path', { className: 'quota-orb-wave-front', d: frontWave, fill: 'url(#quota-orb-liquid)', opacity: 0.92 }),
-                    jsx('ellipse', { className: 'quota-orb-meniscus', cx: 46, cy: surfaceY + 1, rx: 34, ry: 3.4, fill: 'none', stroke: 'var(--ui-green, var(--ui-accent))', strokeWidth: 0.7, opacity: 0.5 }),
+                    jsx('ellipse', { className: 'quota-orb-meniscus', cx: 46, cy: surfaceY + 1, rx: 34, ry: 3.4, fill: 'none', stroke: 'var(--quota-orb-liquid, var(--ui-green, var(--ui-accent)))', strokeWidth: 0.7, opacity: 0.5 }),
                     jsx('path', { className: 'quota-orb-surface-line', d: surfaceLine, fill: 'none', stroke: 'var(--ui-text-primary)', strokeWidth: 0.8, opacity: 0.64 }),
                     jsx('path', { className: 'quota-orb-wave-glint', d: glintWave, fill: 'none', stroke: 'url(#quota-orb-water-film)', strokeWidth: 1.35, strokeLinecap: 'round', opacity: 0.76 })
                   ]
@@ -589,7 +621,7 @@ function CrystalQuotaOrb({ remaining, label, ariaLabel, subLabel }) {
           jsx('path', {
             d: 'M 58 19 C 68 24, 75 34, 77 45',
             fill: 'none',
-            stroke: 'var(--ui-green, var(--ui-accent))',
+            stroke: 'var(--quota-orb-liquid, var(--ui-green, var(--ui-accent)))',
             strokeWidth: 1.2,
             strokeLinecap: 'round',
             opacity: clamped === null ? 0.1 : 0.5
@@ -626,10 +658,11 @@ function CrystalQuotaOrb({ remaining, label, ariaLabel, subLabel }) {
 
 function TechnicalLabel({ children }) {
   return jsx('span', {
-    className: 'uppercase text-(--ui-text-quaternary)',
+    className: 'quota-orb-readable-meta uppercase',
     style: {
       fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
-      fontSize: '9px',
+      fontSize: '10px',
+      fontWeight: 600,
       letterSpacing: '0.14em'
     },
     children
@@ -690,6 +723,29 @@ function Metric({ label, value, featured = false }) {
   })
 }
 
+function BillingNotice({ snapshot, t }) {
+  const tokenBilling = snapshot.tokenBilling || emptySnapshot.tokenBilling
+  const cost = tokenBilling.available === true ? tokenBilling.cost : null
+  const costKnown = cost && finite(cost.amount) && cost.currency && ['actual', 'estimated'].includes(cost.classification)
+  const costLabel = costKnown
+    ? `${cost.classification === 'actual' ? t('actualBilledCost') : t('estimatedCost')}: ${cost.currency} ${cost.amount}`
+    : t('billingUnavailable')
+  return jsxs('div', {
+    className: 'quota-orb-section',
+    children: [
+      jsx(SectionHeader, { title: t('tokenBilling'), meta: tokenBilling.source || t('unknown') }),
+      jsxs('div', {
+        className: 'rounded-lg border border-(--ui-stroke-secondary) p-2.5',
+        style: { background: 'color-mix(in srgb, var(--ui-bg-editor) 84%, transparent)' },
+        children: [
+          jsx('div', { className: 'font-medium text-foreground', style: { fontSize: '13px' }, children: costLabel }),
+          jsx('div', { className: 'quota-orb-readable-meta mt-1', style: { fontSize: '10px', lineHeight: 1.5 }, children: t('localTokensNotInvoice') })
+        ]
+      })
+    ]
+  })
+}
+
 function WindowRow({ window, t }) {
   const remaining = clampPercent(window.remaining_percent)
   return jsxs('div', {
@@ -729,7 +785,7 @@ function WindowRow({ window, t }) {
               className: 'h-full rounded-full transition-[width]',
               style: {
                 width: `${remaining}%`,
-                background: 'linear-gradient(90deg, color-mix(in srgb, var(--ui-green) 55%, transparent), var(--ui-green))'
+                background: liquidGradient(remaining)
               }
             })
       }),
@@ -810,6 +866,9 @@ function DetailPanel({ data }) {
   const { t, languageMode, setLanguageMode } = useQuotaI18n(profile)
   const today = snapshot.today || emptySnapshot.today
   const quota = snapshot.quota || emptySnapshot.quota
+  const quotaWindows = quota.available === true && Array.isArray(quota.windows)
+    ? quota.windows
+    : []
   const remaining = clampPercent(lowestRemaining(snapshot))
   const providerMeta = [quota.provider, quota.plan].filter(Boolean).join(' · ') || t('unknown')
 
@@ -863,8 +922,8 @@ function DetailPanel({ data }) {
               jsxs('div', {
                 children: [
                   jsx('div', {
-                    className: 'font-medium tabular-nums text-(--ui-green)',
-                    style: { fontSize: '34px', letterSpacing: '-0.035em', lineHeight: 1 },
+                    className: 'font-medium tabular-nums',
+                    style: { color: liquidTone(remaining).color, fontSize: '34px', letterSpacing: '-0.035em', lineHeight: 1 },
                     children: remaining === null ? '—' : `${Math.round(remaining)}%`
                   }),
                   jsx('div', { className: 'mt-1 text-(--ui-text-tertiary)', style: { fontSize: '10px' }, children: t('minimumWindow') })
@@ -907,6 +966,7 @@ function DetailPanel({ data }) {
           })
         ]
       }),
+      jsx(BillingNotice, { snapshot, t }),
       jsxs('div', {
         className: 'quota-orb-section',
         children: [
@@ -914,8 +974,8 @@ function DetailPanel({ data }) {
           jsx('div', {
             className: 'rounded-lg border border-(--ui-stroke-secondary) px-2.5',
             style: { background: 'color-mix(in srgb, var(--ui-bg-editor) 84%, transparent)' },
-            children: quota.windows?.length
-              ? quota.windows.map((window, index) => jsx(WindowRow, { window, t }, `${window.label}-${index}`))
+            children: quotaWindows.length
+              ? quotaWindows.map((window, index) => jsx(WindowRow, { window, t }, `${window.label}-${index}`))
               : jsx('div', { className: 'py-3 text-(--ui-text-tertiary)', children: t('quotaUnavailable') })
           }),
           jsx('div', {
@@ -1064,6 +1124,11 @@ export default {
         apiCalls: 'API calls',
         sessions: 'Sessions',
         providerQuota: 'Provider quota',
+        tokenBilling: 'Token billing',
+        actualBilledCost: 'Actual billed cost',
+        estimatedCost: 'Estimated cost',
+        billingUnavailable: 'Billing cost Unavailable',
+        localTokensNotInvoice: 'Local Token totals are usage evidence, not an invoice or charged amount.',
         usageOverview: 'Usage overview',
         liveQuota: 'Live account signal',
         minimumWindow: 'lowest remaining provider window',
@@ -1109,6 +1174,11 @@ export default {
         apiCalls: 'API 调用',
         sessions: '会话数',
         providerQuota: '提供商配额',
+        tokenBilling: 'Token 流量计费',
+        actualBilledCost: '提供商已报告费用',
+        estimatedCost: '估算费用',
+        billingUnavailable: '计费金额不可用',
+        localTokensNotInvoice: '本地 Token 汇总仅代表用量，不等于账单或实际扣款。',
         usageOverview: '用量概览',
         liveQuota: '实时账户信号',
         minimumWindow: '提供商最低剩余窗口',

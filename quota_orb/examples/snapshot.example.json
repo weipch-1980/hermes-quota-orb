@@ -1,0 +1,37 @@
+{
+  "schema_version": "1.0",
+  "platform": "example",
+  "provider": "example-provider",
+  "profile": null,
+  "account": null,
+  "model": null,
+  "subscription_quota": {
+    "available": false,
+    "source": "unavailable",
+    "plan": null,
+    "windows": [],
+    "unavailable_reason": "Replace this example with an explicit official read-only source."
+  },
+  "api_quota": {
+    "available": false,
+    "source": "unavailable",
+    "limits": [],
+    "unavailable_reason": "No API quota source is configured."
+  },
+  "local_usage": {
+    "available": false,
+    "source": "unavailable",
+    "day": null,
+    "totals": null,
+    "by_provider": [],
+    "unavailable_reason": "No local usage source is configured."
+  },
+  "token_billing": {
+    "available": false,
+    "source": "unavailable",
+    "usage": null,
+    "allowance": null,
+    "cost": null,
+    "unavailable_reason": "No official Token billing source is configured."
+  }
+}

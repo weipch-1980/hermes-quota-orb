@@ -64,6 +64,51 @@ class AccountSnapshotTests(unittest.TestCase):
             },
         )
 
+    def test_serialize_account_snapshot_accepts_only_literal_true_as_available(self):
+        module = load_module()
+
+        class Window:
+            label = "Session"
+            used_percent = 40
+            reset_at = None
+            detail = "provider supplied"
+
+        expected_window = {
+            "label": "Session",
+            "used_percent": 40.0,
+            "remaining_percent": 60.0,
+            "reset_at": None,
+            "detail": "provider supplied",
+        }
+        for supplied, expected in (
+            ("false", False),
+            (1, False),
+            ({}, False),
+            (["unexpected"], False),
+            (True, True),
+        ):
+            with self.subTest(available=supplied):
+                snapshot = type(
+                    "Snapshot",
+                    (),
+                    {
+                        "available": supplied,
+                        "provider": "openai-codex",
+                        "source": "usage_api",
+                        "fetched_at": None,
+                        "title": "Account limits",
+                        "plan": None,
+                        "windows": (Window(),),
+                        "details": (),
+                        "unavailable_reason": None,
+                    },
+                )()
+
+                result = module.serialize_account_snapshot(snapshot)
+
+                self.assertIs(result["available"], expected)
+                self.assertEqual(result["windows"], [expected_window])
+
     def test_plugin_exports_read_only_snapshot_route(self):
         module = load_module()
         routes = {(route.path, tuple(sorted(route.methods or ()))) for route in module.router.routes}
@@ -151,6 +196,9 @@ class DailyUsageTests(unittest.TestCase):
         self.assertEqual(result["today"]["total_tokens"], 125)
         self.assertFalse(result["quota"]["available"])
         self.assertEqual(result["quota"]["provider"], "openai-codex")
+        self.assertFalse(result["tokenBilling"]["available"])
+        self.assertIsNone(result["tokenBilling"]["cost"])
+        self.assertIn("not an invoice", result["tokenBilling"]["unavailable_reason"])
 
 
 if __name__ == "__main__":

@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Quota Orb</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --orb-green: var(--ui-green, oklch(0.68 0.17 160));
+      --orb-yellow: var(--ui-warning, oklch(0.78 0.16 82));
+      --orb-red: var(--ui-danger, oklch(0.64 0.23 25));
+      --orb-unknown: color-mix(in srgb, CanvasText 42%, Canvas);
+      --orb-liquid: var(--orb-unknown);
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; color: CanvasText; background: transparent; font: 14px/1.5 Inter, system-ui, -apple-system, "Segoe UI", sans-serif; }
+    .card { width: min(100%, 380px); display: grid; justify-items: center; gap: 10px; padding: 18px; border: 1px solid color-mix(in srgb, currentColor 26%, transparent); border-radius: 22px; background: color-mix(in srgb, Canvas 94%, transparent); }
+    .orb-wrap { position: relative; width: 190px; aspect-ratio: 1; color: var(--orb-liquid); }
+    svg { width: 100%; height: 100%; display: block; filter: drop-shadow(0 18px 22px color-mix(in srgb, currentColor 20%, transparent)); }
+    .shell { fill: color-mix(in srgb, Canvas 78%, transparent); stroke: color-mix(in srgb, currentColor 52%, transparent); stroke-width: 3; }
+    .inner-shell { fill: none; stroke: color-mix(in srgb, currentColor 34%, transparent); stroke-width: 1.5; }
+    .liquid { color: var(--orb-liquid); transition: color 160ms ease, opacity 160ms ease; }
+    .liquid-base { fill: currentColor; opacity: .56; }
+    .wave-a { fill: currentColor; opacity: .82; animation: drift-a 5s linear infinite; }
+    .wave-b { fill: currentColor; opacity: .42; animation: drift-b 7s linear infinite reverse; }
+    .glint { fill: none; stroke: color-mix(in srgb, CanvasText 72%, transparent); stroke-width: 4; stroke-linecap: round; opacity: .72; }
+    .unavailable .liquid, .empty .liquid { display: none; }
+    .unavailable svg { opacity: .78; }
+    .title { font-size: 15px; font-weight: 700; letter-spacing: .01em; }
+    .value { font-size: 26px; font-weight: 650; font-variant-numeric: tabular-nums; }
+    .meta { min-height: 1.5em; max-width: 34ch; text-align: center; font-weight: 500; color: color-mix(in srgb, currentColor 88%, transparent); }
+    .billing { width: 100%; padding: 9px 11px; border: 1px solid color-mix(in srgb, currentColor 24%, transparent); border-radius: 10px; text-align: center; font-size: 13px; font-weight: 550; color: color-mix(in srgb, currentColor 88%, transparent); background: color-mix(in srgb, CanvasText 5%, Canvas); }
+    @keyframes drift-a { to { transform: translateX(-16px); } }
+    @keyframes drift-b { to { transform: translateX(14px); } }
+    @media (prefers-reduced-motion: reduce) {
+      .wave-a, .wave-b { animation: none; }
+      .liquid { transition: none; }
+    }
+  </style>
+</head>
+<body>
+  <main class="card unavailable" id="card" role="status" aria-live="polite">
+    <div class="orb-wrap">
+      <svg viewBox="0 0 168 168" aria-hidden="true" focusable="false">
+        <defs><clipPath id="orb-clip"><circle cx="84" cy="84" r="70"></circle></clipPath></defs>
+        <circle class="shell" cx="84" cy="84" r="76"></circle>
+        <g class="liquid" clip-path="url(#orb-clip)">
+          <rect class="liquid-base" id="liquid-base" x="8" y="84" width="152" height="76"></rect>
+          <path class="wave-b" id="wave-b"></path>
+          <path class="wave-a" id="wave-a"></path>
+        </g>
+        <circle class="inner-shell" cx="84" cy="84" r="70"></circle>
+        <path class="glint" d="M45 52 C57 33 77 25 96 28"></path>
+      </svg>
+    </div>
+    <div class="title" id="title">Quota Orb</div>
+    <div class="value" id="value">Unavailable</div>
+    <div class="meta" id="meta">No official quota or Token allowance is available.</div>
+    <div class="billing" id="billing">Billing cost Unavailable.</div>
+  </main>
+  <script>
+    const card = document.getElementById("card");
+    const value = document.getElementById("value");
+    const meta = document.getElementById("meta");
+    const billing = document.getElementById("billing");
+    const title = document.getElementById("title");
+    const base = document.getElementById("liquid-base");
+    const waveA = document.getElementById("wave-a");
+    const waveB = document.getElementById("wave-b");
+
+    function liquidGeometry(remaining) {
+      const numeric = typeof remaining === "number" ? remaining : Number.NaN;
+      const clamped = Number.isFinite(numeric) ? Math.max(0, Math.min(100, numeric)) : null;
+      const surfaceY = clamped === null ? 84 : 84 - clamped * 0.76;
+      const depth = clamped === null ? 0 : Math.max(0, 154 - surfaceY);
+      const amplitude = Math.min(5, depth * 0.16);
+      return { clamped, surfaceY, depth, amplitude };
+    }
+
+    function liquidTone(remaining) {
+      const clamped = liquidGeometry(remaining).clamped;
+      if (clamped === null) return "unknown";
+      if (clamped < 30) return "red";
+      if (clamped < 50) return "yellow";
+      return "green";
+    }
+
+    function wavePath(y, amplitude, phase) {
+      return `M -20 ${y} Q 12 ${y - amplitude + phase} 44 ${y} T 108 ${y} T 172 ${y} T 220 ${y} L 220 168 L -20 168 Z`;
+    }
+
+    function formatNumber(number) {
+      return new Intl.NumberFormat(undefined, { maximumFractionDigits: 4 }).format(number);
+    }
+
+    function billingText(tokenBilling) {
+      const available = tokenBilling?.available === true;
+      const usage = available ? tokenBilling.usage : null;
+      const cost = available ? tokenBilling.cost : null;
+      const tokens = typeof usage?.total_tokens === "number" && Number.isFinite(usage.total_tokens)
+        ? `Token usage ${formatNumber(usage.total_tokens)}`
+        : null;
+      const validClassification = cost?.classification === "actual" || cost?.classification === "estimated";
+      if (validClassification && typeof cost.amount === "number" && Number.isFinite(cost.amount) && cost.currency) {
+        const prefix = cost.classification === "actual" ? "Actual billed cost" : "Estimated cost";
+        return `${prefix}: ${cost.currency} ${formatNumber(cost.amount)}${tokens ? ` · ${tokens}` : ""}`;
+      }
+      return `${tokens ? `${tokens} · ` : ""}Billing cost Unavailable.`;
+    }
+
+    function render(snapshot) {
+      const quota = snapshot?.subscription_quota;
+      const windows = quota?.available === true && Array.isArray(quota.windows) ? quota.windows : [];
+      const selectedWindow = windows.filter((item) => typeof item?.remaining_percent === "number" && Number.isFinite(item.remaining_percent)).reduce((selected, item) => selected === null || item.remaining_percent < selected.remaining_percent ? item : selected, null);
+      const tokenBilling = snapshot?.token_billing;
+      const tokenAllowance = tokenBilling?.available === true && tokenBilling.allowance && typeof tokenBilling.allowance === "object" ? tokenBilling.allowance : null;
+      const tokenRemaining = typeof tokenAllowance?.remaining_percent === "number" && Number.isFinite(tokenAllowance.remaining_percent) ? tokenAllowance.remaining_percent : null;
+      const quotaRemaining = selectedWindow?.remaining_percent ?? null;
+      const remaining = quotaRemaining === null ? tokenRemaining : tokenRemaining === null ? quotaRemaining : Math.min(quotaRemaining, tokenRemaining);
+      const geometry = liquidGeometry(remaining);
+      const tone = liquidTone(remaining);
+      const provider = snapshot?.provider || "Unknown provider";
+      title.textContent = provider;
+      document.documentElement.style.setProperty("--orb-liquid", `var(--orb-${tone})`);
+      card.classList.toggle("unavailable", geometry.clamped === null);
+      card.classList.toggle("empty", geometry.clamped === 0);
+      billing.textContent = billingText(tokenBilling);
+
+      if (geometry.clamped === null) {
+        const total = tokenBilling?.available === true && typeof tokenBilling.usage?.total_tokens === "number" ? tokenBilling.usage.total_tokens : null;
+        value.textContent = total === null ? "Unavailable" : `${formatNumber(total)} tok`;
+        meta.textContent = tokenBilling?.unavailable_reason || quota?.unavailable_reason || "No official quota or Token allowance is available.";
+        card.setAttribute("role", "status");
+        card.removeAttribute("aria-valuemin");
+        card.removeAttribute("aria-valuemax");
+        card.removeAttribute("aria-valuenow");
+        return;
+      }
+
+      value.textContent = `${geometry.clamped.toFixed(1).replace(/\.0$/, "")}%`;
+      meta.textContent = geometry.clamped === tokenRemaining
+        ? tokenAllowance?.reset_at ? `Token allowance resets ${tokenAllowance.reset_at}` : "Provider-reported remaining Token allowance"
+        : selectedWindow?.reset_at ? `Resets ${selectedWindow.reset_at}` : "Provider-reported remaining subscription quota";
+      card.setAttribute("role", "meter");
+      card.setAttribute("aria-valuemin", "0");
+      card.setAttribute("aria-valuemax", "100");
+      card.setAttribute("aria-valuenow", String(geometry.clamped));
+      base.setAttribute("y", String(geometry.surfaceY));
+      base.setAttribute("height", String(Math.max(0, 160 - geometry.surfaceY)));
+      waveA.setAttribute("d", wavePath(geometry.surfaceY, geometry.amplitude, 0));
+      waveB.setAttribute("d", wavePath(geometry.surfaceY + Math.min(3, geometry.depth * .08), geometry.amplitude * .72, 1));
+    }
+
+    function toolResult(event) {
+      if (event.source !== window.parent) return;
+      const message = event.data;
+      if (!message || message.jsonrpc !== "2.0" || message.method !== "ui/notifications/tool-result") return;
+      const snapshot = message.params?.structuredContent || message.params?.content?.[0]?.text;
+      if (typeof snapshot === "string") {
+        try { render(JSON.parse(snapshot)); } catch { render(null); }
+      } else {
+        render(snapshot);
+      }
+    }
+
+    window.addEventListener("message", toolResult, { passive: true });
+    render(null);
+  </script>
+</body>
+</html>

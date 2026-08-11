@@ -28,7 +28,7 @@ class DesktopPluginContractTests(unittest.TestCase):
 
     def test_frontend_matches_snapshot_contract(self):
         self.assertIn("snapshot?.today", self.source)
-        self.assertIn("quota?.windows", self.source)
+        self.assertIn("snapshot?.quota?.available === true", self.source)
         self.assertNotIn("snapshot?.daily", self.source)
         self.assertNotIn("quota?.short", self.source)
         self.assertNotIn("quota?.weekly", self.source)
@@ -71,7 +71,7 @@ const messages = {{
 const t = (key, ...args) => typeof messages[key] === 'function' ? messages[key](...args) : messages[key]
 const output = reportText({{
   today: {{ total_tokens: 123, api_calls: 2 }},
-  quota: {{ windows: [{{ label: 'Session', remaining_percent: null }}] }}
+  quota: {{ available: true, windows: [{{ label: 'Session', remaining_percent: null }}] }}
 }}, t)
 if (output !== '123|2|Session: Unknown') throw new Error(output)
 """
@@ -125,6 +125,87 @@ if (reportDayKey('alpha') !== 'lastReportDay:alpha') throw new Error(reportDayKe
         self.assertIn("'aria-valuenow': clamped === null ? undefined : clamped", self.source)
         self.assertIn("'aria-valuenow': remaining === null ? undefined : remaining", self.source)
         self.assertIn("remaining === null ? `${window.label || t('quota')}: ${t('unknown')}`", self.source)
+
+    def test_liquid_uses_strict_remaining_threshold_colors(self):
+        helpers = []
+        for name in ("finite", "clampPercent", "liquidTone"):
+            match = re.search(rf"function {name}\([^)]*\) \{{.*?\n\}}", self.source, re.DOTALL)
+            self.assertIsNotNone(match, name)
+            helpers.append(match.group(0))
+        script = "\n".join(helpers) + r"""
+if (liquidTone(null).state !== 'unknown') throw new Error('unknown')
+if (liquidTone(50).state !== 'green') throw new Error('50')
+if (liquidTone(49.999).state !== 'yellow') throw new Error('49')
+if (liquidTone(30).state !== 'yellow') throw new Error('30')
+if (liquidTone(29.999).state !== 'red') throw new Error('29')
+if (liquidTone(0).state !== 'red') throw new Error('0')
+"""
+        result = subprocess.run(["node", "-e", script], text=True, capture_output=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("liquidTone(remaining).color", self.source)
+        self.assertIn("background: liquidGradient(remaining)", self.source)
+
+    def test_unavailable_quota_windows_never_drive_hermes_liquid_or_report(self):
+        helpers = []
+        for name in ("finite", "lowestRemaining"):
+            match = re.search(rf"function {name}\([^)]*\) \{{.*?\n\}}", self.source, re.DOTALL)
+            self.assertIsNotNone(match, name)
+            helpers.append(match.group(0))
+        script = "\n".join(helpers) + r"""
+const unavailable = { quota: { available: false, windows: [{ remaining_percent: 12 }] } }
+if (lowestRemaining(unavailable) !== null) throw new Error('unavailable quota leaked')
+const malformed = { quota: { available: 'true', windows: [{ remaining_percent: 12 }] } }
+if (lowestRemaining(malformed) !== null) throw new Error('truthy quota leaked')
+const available = { quota: { available: true, windows: [{ remaining_percent: 12 }] } }
+if (lowestRemaining(available) !== 12) throw new Error('available quota lost')
+"""
+        result = subprocess.run(["node", "-e", script], text=True, capture_output=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("snapshot?.quota?.available === true", self.source)
+
+    def test_detail_and_billing_fail_closed_on_nonliteral_availability(self):
+        self.assertIn(
+            "const quotaWindows = quota.available === true && Array.isArray(quota.windows)",
+            self.source,
+        )
+        self.assertIn("children: quotaWindows.length", self.source)
+        self.assertNotIn("children: quota.windows?.length", self.source)
+
+        finite = re.search(r"function finite\([^)]*\) \{.*?\n\}", self.source, re.DOTALL)
+        billing = re.search(
+            r"function BillingNotice\([^)]*\) \{.*?\n\}\n\nfunction WindowRow",
+            self.source,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(finite)
+        self.assertIsNotNone(billing)
+        script = f"""
+const emptySnapshot = {{ tokenBilling: {{ available: false, cost: null, source: null }} }}
+const SectionHeader = 'SectionHeader'
+const jsx = (type, props) => ({{ type, ...props }})
+const jsxs = jsx
+{finite.group(0)}
+{billing.group(0).removesuffix(chr(10) + chr(10) + 'function WindowRow')}
+const messages = {{ actualBilledCost: 'Actual billed cost', estimatedCost: 'Estimated cost', billingUnavailable: 'Billing cost Unavailable', localTokensNotInvoice: 'not invoice', tokenBilling: 'Token billing', unknown: 'Unknown' }}
+const t = key => messages[key]
+const leaked = BillingNotice({{ snapshot: {{ tokenBilling: {{ available: 'true', source: 'x', cost: {{ amount: 1, currency: 'USD', classification: 'actual' }} }} }}, t }})
+const leakedLabel = leaked.children[1].children[0].children
+if (leakedLabel !== 'Billing cost Unavailable') throw new Error(leakedLabel)
+const actual = BillingNotice({{ snapshot: {{ tokenBilling: {{ available: true, source: 'x', cost: {{ amount: 1, currency: 'USD', classification: 'actual' }} }} }}, t }})
+const actualLabel = actual.children[1].children[0].children
+if (actualLabel !== 'Actual billed cost: USD 1') throw new Error(actualLabel)
+"""
+        result = subprocess.run(["node", "-e", script], text=True, capture_output=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_panel_contrast_and_token_billing_notice_are_explicit(self):
+        self.assertIn("function BillingNotice", self.source)
+        self.assertIn("tokenBilling", self.source)
+        self.assertIn("billingUnavailable", self.source)
+        self.assertIn("localTokensNotInvoice", self.source)
+        self.assertIn("quota-orb-readable-meta", self.source)
+        self.assertIn("color: var(--ui-text-secondary)", self.source)
+        self.assertNotIn("className: 'uppercase text-(--ui-text-quaternary)'", self.source)
 
     def test_floating_orb_removes_card_chrome_without_touching_other_panes(self):
         self.assertIn('[data-floating-pane="quota-orb:orb"]', self.source)
