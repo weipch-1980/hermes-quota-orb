@@ -1,10 +1,6 @@
 ---
 name: quota-orb
 description: Inspect read-only quota and usage snapshots truthfully.
-version: 0.4.0
-author: weipch-1980, Hermes Agent
-license: MIT
-platforms: [linux, macos, windows]
 ---
 
 # Quota Orb
@@ -25,7 +21,7 @@ Use this Skill in Codex, Claude Code, Antigravity or Gemini CLI, Cursor, GitHub 
 
 ## Desktop Widget
 
-On Windows, the optional `quota-orb-widget` command opens the independent draggable desktop orb. It is separate from the Skill host and uses the same read-only snapshot source. Its liquid level uses the lowest available subscription or Token-allowance percentage: green at 50% or above, yellow below 50%, and red below 30%. Unknown remains neutral.
+On Windows, the optional `quota-orb-widget` command opens the independent draggable desktop orb. Explicit snapshot, Hermes, or Codex configuration wins; otherwise the widget checks only the fixed user Codex app-server path and never searches `PATH` or reads credentials. Fixed labels follow the Windows system language (`zh` uses Simplified Chinese; other locales use English), and the color-key-safe boundary suppresses external shadow or fringe. Its liquid level uses the lowest available subscription or Token-allowance percentage: green at 50% or above, yellow below 50%, and red below 30%. Unknown remains neutral.
 
 ## Safety
 

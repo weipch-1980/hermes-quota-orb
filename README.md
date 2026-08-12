@@ -1,4 +1,4 @@
-# Quota Orb v0.4.0
+# Quota Orb v0.5.0
 
 A local-first, read-only quota system for AI coding agents, MCP-compatible clients, Hermes Desktop, and an independent Windows desktop widget. It shows:
 
@@ -18,17 +18,18 @@ Quota Orb is an independent community project, is not an official Nous Research 
 ![Quota Orb preview](docs/quota-orb-preview.png)
 
 ![Hermes](https://img.shields.io/badge/Hermes-v0.20.0%2B-gold)
-![Quota Orb](https://img.shields.io/badge/Quota%20Orb-v0.4.0-emerald)
+![Quota Orb](https://img.shields.io/badge/Quota%20Orb-v0.5.0-emerald)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
-## Why v0.4.0
+## Why v0.5.0
 
-Quota Orb v0.4.0 is recommended for teams and individual developers who use more than one AI coding host but want one conservative, read-only view of quota, Token usage, and cost signals. Its main advantages are:
+Quota Orb v0.5.0 adds an official Codex rate-limit source and a more polished Windows crystal orb without weakening its conservative, read-only data model. Its main advantages are:
 
-- **Honest data semantics:** subscription quota, API quota, local usage, Token allowance, provider-reported actual cost, and price-table estimates remain separate; missing official data stays `Unavailable`.
-- **Portable without silent host switching:** the Universal installer requires an explicit AI host and never falls back to Hermes; OpenClaw remains under its official managed CLI boundary.
-- **Useful on Windows without a host UI:** the independent topmost orb supports drag persistence, multiple monitors, negative coordinates, DPI changes, real 0%, and neutral Unknown state.
-- **Defense in depth:** installers and both release builders reject link/reparse escapes and protect check-to-commit output paths against parent-directory swaps.
+- **Official Codex rate limits, read only:** the local source calls the experimental Codex app-server method `account/rateLimits/read`; it exposes no independent REST API, sends no credentials, reads no credential files, and fails closed to `Unavailable`.
+- **A refined Windows crystal orb:** the visible liquid area tracks the percentage, two natural waves animate independently, and the color-key-safe circular frame has no external shadow or fringe.
+- **Professional details without rewriting evidence:** fixed panel labels are available in English and Simplified Chinese, while provider and quota-window labels remain verbatim. Snapshot collection runs in the background so slow sources do not freeze the widget.
+- **Truth-only level selection:** the orb uses the lowest valid subscription window; an explicit Token allowance drives it only when no valid subscription window exists. Real 0% remains distinct from Unknown.
+- **Fail-closed delivery:** installers and builders retain their path-safety controls, and native CI command failures now stop the release workflow immediately.
 - **Two focused distributions:** existing Hermes users can choose the compact Hermes Skill ZIP; cross-host users should choose the Universal ZIP with the shared MCP core, adapters, widget, and explicit installer.
 
 For most Codex, Claude Code, Gemini/Antigravity, Cursor, Copilot, Qwen, Kimi, or WorkBuddy/CodeBuddy users, the **Universal package is the recommended download**. Use the Hermes-only package only when Hermes is the explicitly selected host.
@@ -40,6 +41,7 @@ For most Codex, Claude Code, Gemini/Antigravity, Cursor, Copilot, Qwen, Kimi, or
 | Current session | Hermes `session.usage` RPC | Live session input/output totals |
 | Today | Local Hermes `state.db` | Persisted sessions grouped by provider and model for the active profile |
 | Account quota | Hermes `agent.account_usage` | Exact only when the provider exposes an account-usage API |
+| Codex account quota | Experimental Codex app-server `account/rateLimits/read` | Official read-only rate-limit windows only; raw window labels remain unchanged |
 | Token billing | Explicit official field or canonical snapshot | Actual amount only when provider-reported; dated official-price calculations are labeled estimated; otherwise `Unavailable` |
 | Daily report | Local plugin timer/storage | Once per local day at/after the configured hour and once per active profile |
 
@@ -136,9 +138,11 @@ After installing the Python package, run:
 quota-orb-widget
 ```
 
-The borderless orb stays above applications, moves only after the left-button drag threshold is crossed, saves its virtual-screen position on release, and restores/clamps it against current Windows monitor work areas after restart, monitor removal, resolution, or DPI changes. Right-click the orb to exit. Position state contains only `x` and `y` at `%LOCALAPPDATA%\QuotaOrb\widget-position.json`; it stores no account or authentication data. Startup-with-Windows is not enabled.
+The borderless crystal orb stays above applications and animates layered liquid waves unless Windows reduced-motion is enabled. Its Windows color-key display frame uses a clean circular boundary without an external shadow or alpha fringe. Left-click (or focus it and press Enter/Space) to toggle one read-only details panel; drag begins only after the 4-pixel threshold, so dragging never opens the panel. The widget selects Simplified Chinese for Windows `zh` UI locales and English otherwise; only fixed UI labels are translated, while provider, model, source, and quota-window labels remain unchanged. The panel shows the current snapshot identity, quota windows, API quota, local usage, and Token billing without merging actual, estimated, or unavailable values. Snapshot refresh runs in a single background worker; a failed refresh retains the latest verified snapshot and reports the failure. Escape or Close dismisses only the panel; right-click the orb to exit, while Escape on the orb exits it.
 
-Use `QUOTA_ORB_SNAPSHOT_FILE` for an explicit provider-neutral snapshot or the already documented safe loopback source. Unknown displays `?`, real 0% displays an empty orb, and the liquid surface preserves `84 - remaining_percent * 0.76`. The liquid is green for `>=50%`, yellow for `30%–<50%`, and red for `<30%`; a Token allowance can drive the same level when no subscription window is available.
+The orb saves its virtual-screen position on drag release and restores/clamps it against current Windows monitor work areas after restart, monitor removal, resolution, or DPI changes. Position state contains only `x` and `y` at `%LOCALAPPDATA%\QuotaOrb\widget-position.json`; it stores no account or authentication data. Startup-with-Windows is not enabled.
+
+Use `QUOTA_ORB_SNAPSHOT_FILE` for an explicit provider-neutral snapshot or the already documented safe loopback source. Explicit snapshot, Hermes, and Codex executable settings take priority; when none is set, only `%USERPROFILE%\.codex\plugins\.plugin-appserver\codex.exe` is considered, with no `PATH` search or credential-file read. Unknown displays only `?` with an unavailable inner ring, while real 0% displays an empty orb. The visible liquid area—not its linear height—matches the remaining percentage: 50% crosses the sphere center and 100% fills the inner chamber. Color varies continuously within each band: green for `>=50%`, yellow for `30%–<50%`, and red for `<30%`; a Token allowance can drive the same level when no subscription window is available.
 
 ## Hermes native installation — explicit only
 
@@ -193,17 +197,17 @@ python scripts/build_universal_package.py
 Outputs:
 
 ```text
-dist/quota-orb-skill-v0.4.0.zip
-dist/quota-orb-skill-v0.4.0.sha256
-dist/quota-orb-universal-v0.4.0.zip
-dist/quota-orb-universal-v0.4.0.sha256
+dist/quota-orb-skill-v0.5.0.zip
+dist/quota-orb-skill-v0.5.0.sha256
+dist/quota-orb-universal-v0.5.0.zip
+dist/quota-orb-universal-v0.5.0.sha256
 ```
 
 Both archives use sorted entries, fixed timestamps, fixed file modes, no-follow source reads, and exclude `__pycache__` directories and `*.pyc` files. Both builders fail closed when a source tree, output directory, or any existing output ancestor is a symlink, junction, or reparse point.
 
 ## Artifact Attestation
 
-For `v0.3.1` and later, pushing a release tag triggers native GitHub Actions CI. Starting with `v0.4.0`, the same run tests the checked-out tag, builds both ZIPs and both SHA-256 sidecars once, verifies the tag and each sidecar, attests each CI-built ZIP separately, then creates the GitHub Release with all four original assets. Any integrity-gate or attestation failure stops before publication.
+For `v0.3.1` and later, pushing a release tag triggers native GitHub Actions CI. Starting with `v0.4.0`, the same run tests the checked-out tag, builds both ZIPs and both SHA-256 sidecars once, verifies the tag and each sidecar, attests each CI-built ZIP separately, then creates the GitHub Release with all four original assets. In `v0.5.0`, every native install, test, syntax-check, build, and release command explicitly throws on a nonzero exit so PowerShell cannot continue after a failed command. Any command, integrity-gate, or attestation failure stops before publication.
 
 The existing `v0.3.0` Release remains unchanged and has no Artifact Attestation; this workflow never rebuilds or modifies historical releases. Verify a downloaded release ZIP with:
 
@@ -257,7 +261,7 @@ node --check desktop-plugin/plugin.js
 - Provider subscription quota, local Token totals, API rate-limit headers, Token billing, and model context-window usage are different metrics.
 - An actual billed amount must be provider-reported. A price-table calculation is labeled estimated; when neither can be verified, cost remains `Unavailable`.
 - Providers without an account-usage API cannot expose an exact remaining subscription quota.
-- The real liquid level uses the lowest official provider quota window or explicit Token allowance. If neither has a finite remaining percentage, the orb stays neutral rather than inventing a fill level.
+- The real liquid level uses the lowest valid subscription window. Only when no valid subscription window exists may an explicit Token allowance drive the level; if neither has a finite remaining percentage, the orb stays neutral rather than inventing a fill level.
 
 ## Support and commercial integration
 
