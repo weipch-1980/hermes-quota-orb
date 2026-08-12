@@ -29,6 +29,15 @@ class PlatformAdapterTests(unittest.TestCase):
         self.assertEqual(len(set(contents)), 1)
         text = contents[0]
         self.assertTrue(text.startswith("---\nname: quota-orb\n"))
+        frontmatter = text.split("---", 2)[1]
+        self.assertEqual(
+            {
+                line.split(":", 1)[0].strip()
+                for line in frontmatter.splitlines()
+                if ":" in line
+            },
+            {"name", "description"},
+        )
         self.assertIn("get_quota_snapshot", text)
         self.assertIn("get_daily_usage", text)
         self.assertIn("get_supported_sources", text)
@@ -36,6 +45,8 @@ class PlatformAdapterTests(unittest.TestCase):
         self.assertIn("subscription quota", text)
         self.assertIn("API quota", text)
         self.assertIn("local usage", text)
+        self.assertIn("fixed user Codex app-server path", text)
+        self.assertIn("color-key-safe boundary", text)
         self.assertNotIn("cookie", text.lower())
         self.assertNotIn("/usage reset", text)
 
@@ -80,6 +91,15 @@ class PlatformAdapterTests(unittest.TestCase):
         self.assertIn("Claude Code", readme)
         self.assertIn("HTTPS", readme)
         self.assertIn("not deployed", readme)
+
+    def test_codex_registration_uses_the_explicit_app_server_source(self):
+        readme = (ROOT / "adapters" / "codex" / "README.md").read_text(encoding="utf-8")
+        self.assertIn("--env QUOTA_ORB_PLATFORM=codex", readme)
+        self.assertIn("--env QUOTA_ORB_PROVIDER=openai-codex", readme)
+        self.assertIn(
+            r"--env QUOTA_ORB_CODEX_EXE=C:\Users\admin\.codex\plugins\.plugin-appserver\codex.exe",
+            readme,
+        )
 
     def test_google_adapter_covers_current_and_transitioning_official_hosts(self):
         readme = (ROOT / "adapters" / "gemini" / "README.md").read_text(encoding="utf-8")
@@ -244,8 +264,11 @@ class PlatformAdapterTests(unittest.TestCase):
         self.assertIn("not endorsed by OpenAI, Anthropic, or Google", readme)
 
     def test_python_package_declares_official_mcp_runtime_and_html_asset(self):
+        from quota_orb import __version__
+
         text = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
-        self.assertIn('version = "0.4.0"', text)
+        self.assertIn('version = "0.5.0"', text)
+        self.assertEqual(__version__, "0.5.0")
         self.assertIn('"mcp==1.28.1"', text)
         self.assertIn('quota-orb-mcp = "quota_orb.mcp_server:main"', text)
         self.assertIn('quota-orb-widget = "quota_orb.desktop_widget:main"', text)

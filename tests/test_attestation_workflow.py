@@ -62,6 +62,33 @@ class AttestationWorkflowTests(unittest.TestCase):
         self.assertLess(node_position, skill_position)
         self.assertLess(skill_position, universal_position)
 
+    def test_ci_installs_only_the_plugin_test_dependencies_outside_runtime_metadata(self):
+        self.assertIn(
+            "python -m pip install --disable-pip-version-check fastapi==0.139.2 PyYAML==6.0.3",
+            self.text,
+        )
+        project = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+        self.assertNotIn("fastapi", project.lower())
+        self.assertNotIn("pyyaml", project.lower())
+
+    def test_every_native_command_throws_before_the_workflow_can_continue(self):
+        native_commands = (
+            "python -m pip install --disable-pip-version-check .",
+            "python -m pip install --disable-pip-version-check fastapi==0.139.2 PyYAML==6.0.3",
+            "python -m unittest discover -s tests -v",
+            "node --check desktop-plugin/plugin.js",
+            "python scripts/build_skill_package.py --output-dir dist",
+            "python scripts/build_universal_package.py --output-dir dist",
+            "gh release create $env:RELEASE_TAG $env:SKILL_ARCHIVE_PATH $env:SKILL_CHECKSUM_PATH $env:UNIVERSAL_ARCHIVE_PATH $env:UNIVERSAL_CHECKSUM_PATH --verify-tag --title \"Quota Orb $env:RELEASE_TAG\" --generate-notes",
+        )
+        for command in native_commands:
+            with self.subTest(command=command):
+                self.assertRegex(
+                    self.text,
+                    re.escape(command)
+                    + r"\r?\n\s+if \(\$LASTEXITCODE -ne 0\) \{\r?\n\s+throw ",
+                )
+
     def test_build_exports_exactly_two_archives_and_two_checksums(self):
         self.assertIn("Expected exactly two release ZIPs", self.text)
         self.assertIn("Expected exactly two release SHA-256 sidecars", self.text)

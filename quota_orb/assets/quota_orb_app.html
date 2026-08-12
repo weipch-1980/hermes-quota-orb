@@ -109,15 +109,19 @@
       return `${tokens ? `${tokens} · ` : ""}Billing cost Unavailable.`;
     }
 
-    function render(snapshot) {
+    function selectRemaining(snapshot) {
       const quota = snapshot?.subscription_quota;
       const windows = quota?.available === true && Array.isArray(quota.windows) ? quota.windows : [];
       const selectedWindow = windows.filter((item) => typeof item?.remaining_percent === "number" && Number.isFinite(item.remaining_percent)).reduce((selected, item) => selected === null || item.remaining_percent < selected.remaining_percent ? item : selected, null);
       const tokenBilling = snapshot?.token_billing;
       const tokenAllowance = tokenBilling?.available === true && tokenBilling.allowance && typeof tokenBilling.allowance === "object" ? tokenBilling.allowance : null;
       const tokenRemaining = typeof tokenAllowance?.remaining_percent === "number" && Number.isFinite(tokenAllowance.remaining_percent) ? tokenAllowance.remaining_percent : null;
-      const quotaRemaining = selectedWindow?.remaining_percent ?? null;
-      const remaining = quotaRemaining === null ? tokenRemaining : tokenRemaining === null ? quotaRemaining : Math.min(quotaRemaining, tokenRemaining);
+      const remaining = selectedWindow === null ? tokenRemaining : selectedWindow.remaining_percent;
+      return { quota, selectedWindow, tokenBilling, tokenAllowance, tokenRemaining, remaining };
+    }
+
+    function render(snapshot) {
+      const { quota, selectedWindow, tokenBilling, tokenAllowance, tokenRemaining, remaining } = selectRemaining(snapshot);
       const geometry = liquidGeometry(remaining);
       const tone = liquidTone(remaining);
       const provider = snapshot?.provider || "Unknown provider";
@@ -139,7 +143,7 @@
       }
 
       value.textContent = `${geometry.clamped.toFixed(1).replace(/\.0$/, "")}%`;
-      meta.textContent = geometry.clamped === tokenRemaining
+      meta.textContent = selectedWindow === null
         ? tokenAllowance?.reset_at ? `Token allowance resets ${tokenAllowance.reset_at}` : "Provider-reported remaining Token allowance"
         : selectedWindow?.reset_at ? `Resets ${selectedWindow.reset_at}` : "Provider-reported remaining subscription quota";
       card.setAttribute("role", "meter");

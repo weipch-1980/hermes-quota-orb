@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "quota-orb"
-version = "0.4.0"
+version = "0.5.0"
 description = "Read-only quota snapshots for MCP-compatible AI clients."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -12,6 +12,7 @@ license = {text = "MIT"}
 authors = [{name = "weipch-1980"}]
 dependencies = [
   "mcp==1.28.1",
+  "Pillow==12.3.0",
 ]
 
 [project.scripts]

@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.5.0
+
+- Added an official, read-only Codex rate-limit source through the experimental local app-server `account/rateLimits/read` method. The source exposes no independent REST API, sends no credentials, reads no credential files, and fails closed to `Unavailable`.
+- Refined the independent Windows crystal orb with percentage-correct visible liquid area, two natural asymmetric waves, and a color-key-safe circular boundary without an external shadow or fringe.
+- Added a professional read-only details panel with English and Simplified Chinese fixed labels while preserving raw provider and quota-window labels.
+- Moved snapshot collection to one background worker so slow refreshes do not block the widget; failed refreshes retain the latest verified snapshot and report the failure.
+- Kept truth-only level selection explicit: the lowest valid subscription window wins, and a Token allowance can drive the orb only when no valid subscription window exists.
+- Fixed release CI so every native install, test, syntax-check, build, and GitHub Release command stops the workflow immediately on a nonzero exit.
+
 ## 0.4.0
 
 - Added a provider-neutral, read-only quota schema that keeps subscription quota, API quota, local Token usage, and Token billing separate and preserves real 0% versus Unavailable semantics.

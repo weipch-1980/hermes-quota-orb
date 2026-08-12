@@ -158,6 +158,26 @@ const malformed = { quota: { available: 'true', windows: [{ remaining_percent: 1
 if (lowestRemaining(malformed) !== null) throw new Error('truthy quota leaked')
 const available = { quota: { available: true, windows: [{ remaining_percent: 12 }] } }
 if (lowestRemaining(available) !== 12) throw new Error('available quota lost')
+const subscriptionWins = {
+  quota: { available: true, windows: [{ remaining_percent: 45 }] },
+  tokenBilling: { available: true, allowance: { remaining_percent: 29.5 } }
+}
+if (lowestRemaining(subscriptionWins) !== 45) throw new Error('token allowance overrode subscription')
+const tokenFallback = {
+  quota: { available: false, windows: [] },
+  tokenBilling: { available: true, allowance: { remaining_percent: 29.5 } }
+}
+if (lowestRemaining(tokenFallback) !== 29.5) throw new Error('token fallback lost')
+const realZero = {
+  quota: { available: true, windows: [{ remaining_percent: 0 }] },
+  tokenBilling: { available: true, allowance: { remaining_percent: 29.5 } }
+}
+if (lowestRemaining(realZero) !== 0) throw new Error('real zero became unknown')
+const unknown = {
+  quota: { available: true, windows: [{ remaining_percent: null }] },
+  tokenBilling: { available: true, allowance: { remaining_percent: null } }
+}
+if (lowestRemaining(unknown) !== null) throw new Error('unknown became a value')
 """
         result = subprocess.run(["node", "-e", script], text=True, capture_output=True)
         self.assertEqual(result.returncode, 0, result.stderr)

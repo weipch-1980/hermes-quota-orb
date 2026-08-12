@@ -45,7 +45,7 @@ def supported_sources() -> dict[str, Any]:
             },
             "codex": {
                 "transport": "user_agent_skill_and_local_stdio_mcp",
-                "subscription_quota": unavailable,
+                "subscription_quota": "official_codex_app_server_when_quota_orb_codex_exe_configured",
                 "api_quota": snapshot_only,
                 "local_usage": snapshot_only,
                 "token_billing": snapshot_only,

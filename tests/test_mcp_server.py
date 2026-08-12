@@ -126,6 +126,10 @@ class UniversalMcpServerTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(sources["platforms"]["chatgpt"]["subscription_quota"], "unavailable_without_official_source")
         self.assertEqual(
+            sources["platforms"]["codex"]["subscription_quota"],
+            "official_codex_app_server_when_quota_orb_codex_exe_configured",
+        )
+        self.assertEqual(
             sources["platforms"]["claude"]["transport"],
             "claude_remote_connector_or_code_user_local_mcp",
         )
@@ -196,6 +200,40 @@ if (estimated !== 'Estimated cost: USD 1') throw new Error(estimated)
         self.assertNotIn("transition: all", html)
         self.assertNotRegex(html, r"#[0-9A-Fa-f]{3,8}\b")
         self.assertNotRegex(html, r"\brgba?\(")
+
+    async def test_portable_renderer_prioritizes_subscription_then_token_allowance(self):
+        contents = list(await self.server.read_resource(ORB_RESOURCE_URI))
+        html = contents[0].content
+        selector = re.search(
+            r"function selectRemaining\(snapshot\) \{.*?\n    \}",
+            html,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(selector)
+        script = selector.group(0) + r"""
+const subscriptionWins = selectRemaining({
+  subscription_quota: { available: true, windows: [{ remaining_percent: 45 }] },
+  token_billing: { available: true, allowance: { remaining_percent: 29.5 } }
+})
+if (subscriptionWins.remaining !== 45) throw new Error('token allowance overrode subscription')
+const tokenFallback = selectRemaining({
+  subscription_quota: { available: false, windows: [] },
+  token_billing: { available: true, allowance: { remaining_percent: 29.5 } }
+})
+if (tokenFallback.remaining !== 29.5) throw new Error('token fallback lost')
+const realZero = selectRemaining({
+  subscription_quota: { available: true, windows: [{ remaining_percent: 0 }] },
+  token_billing: { available: true, allowance: { remaining_percent: 29.5 } }
+})
+if (realZero.remaining !== 0) throw new Error('real zero became unknown')
+const unknown = selectRemaining({
+  subscription_quota: { available: true, windows: [{ remaining_percent: null }] },
+  token_billing: { available: true, allowance: { remaining_percent: null } }
+})
+if (unknown.remaining !== null) throw new Error('unknown became a value')
+"""
+        result = subprocess.run(["node", "-e", script], text=True, capture_output=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
 
 
 if __name__ == "__main__":

@@ -23,18 +23,31 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install MCP runtime
+      - name: Install MCP runtime and plugin test dependencies
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           python -m pip install --disable-pip-version-check .
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Failed to install the MCP runtime.'
+          }
+          python -m pip install --disable-pip-version-check fastapi==0.139.2 PyYAML==6.0.3
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Failed to install plugin test dependencies.'
+          }
 
       - name: Test release sources
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           python -m unittest discover -s tests -v
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Release source tests failed.'
+          }
           node --check desktop-plugin/plugin.js
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Desktop plugin syntax validation failed.'
+          }
 
       - name: Build release packages
         id: build
@@ -45,7 +58,13 @@ jobs:
             Remove-Item -LiteralPath dist -Recurse -Force
           }
           python scripts/build_skill_package.py --output-dir dist
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Hermes Skill package build failed.'
+          }
           python scripts/build_universal_package.py --output-dir dist
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Universal package build failed.'
+          }
 
           $archives = @(Get-ChildItem -LiteralPath dist -Filter '*.zip' -File)
           if ($archives.Count -ne 2) {
@@ -152,3 +171,6 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           gh release create $env:RELEASE_TAG $env:SKILL_ARCHIVE_PATH $env:SKILL_CHECKSUM_PATH $env:UNIVERSAL_ARCHIVE_PATH $env:UNIVERSAL_CHECKSUM_PATH --verify-tag --title "Quota Orb $env:RELEASE_TAG" --generate-notes
+          if ($LASTEXITCODE -ne 0) {
+            throw 'GitHub Release publication failed.'
+          }

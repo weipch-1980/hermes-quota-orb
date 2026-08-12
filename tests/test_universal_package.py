@@ -25,7 +25,7 @@ class UniversalPackageTests(unittest.TestCase):
             archive_a, checksum_a = build(ROOT, Path(first))
             archive_b, checksum_b = build(ROOT, Path(second))
 
-            self.assertEqual(VERSION, "0.4.0")
+            self.assertEqual(VERSION, "0.5.0")
             self.assertEqual(archive_a.name, f"{PACKAGE_NAME}.zip")
             self.assertEqual(archive_a.read_bytes(), archive_b.read_bytes())
             self.assertEqual(checksum_a.read_bytes(), checksum_b.read_bytes())

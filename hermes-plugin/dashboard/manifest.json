@@ -3,7 +3,7 @@
   "label": "Quota Orb",
   "description": "Read-only provider quota plus provider/model local usage for the Hermes Desktop crystal orb.",
   "icon": "Gauge",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "tab": {
     "path": "/quota-orb",
     "hidden": true

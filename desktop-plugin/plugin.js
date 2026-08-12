@@ -136,8 +136,8 @@ function lowestRemaining(snapshot) {
   const tokenRemaining = snapshot?.tokenBilling?.available === true
     ? snapshot?.tokenBilling?.allowance?.remaining_percent
     : null
-  if (finite(tokenRemaining)) values.push(tokenRemaining)
-  return values.length ? Math.min(...values) : null
+  if (values.length) return Math.min(...values)
+  return finite(tokenRemaining) ? tokenRemaining : null
 }
 
 function toneFor(remaining) {

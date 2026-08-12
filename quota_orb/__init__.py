@@ -3,4 +3,4 @@
 from .core import normalize_snapshot, unavailable_snapshot
 
 __all__ = ["normalize_snapshot", "unavailable_snapshot"]
-__version__ = "0.4.0"
+__version__ = "0.5.0"
