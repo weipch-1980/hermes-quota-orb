@@ -381,7 +381,7 @@ class CodexAppServerSource:
                     "params": {
                         "protocolVersion": "2024-11-05",
                         "capabilities": {},
-                        "clientInfo": {"name": "quota-orb", "version": "0.5.0"},
+                        "clientInfo": {"name": "quota-orb", "version": "0.5.1"},
                     },
                 },
             )

@@ -28,6 +28,8 @@ REDUCED_MOTION_POLL_MS = 250
 RENDER_SCALE_MIN = 4
 PANEL_SCROLLBAR_WIDTH = 12
 PANEL_BUTTON_MIN_SIZE = {"refresh": (72, 32), "close": (48, 32)}
+WIDGET_MUTEX_NAME = r"Local\QuotaOrbDesktopWidget.v1"
+_ERROR_ALREADY_EXISTS = 183
 _NO_SNAPSHOT_RESULT = object()
 LIQUID_CENTER = (66.0, 64.0)
 LIQUID_RADIUS = 49.0
@@ -2538,6 +2540,32 @@ def run_widget(*, state_path: Path, refresh_seconds: float) -> None:
     root.mainloop()
 
 
+def acquire_windows_widget_mutex() -> int | None:
+    """Return a held Windows mutex handle, or None when another instance exists."""
+
+    try:
+        kernel32 = ctypes.windll.kernel32
+        create_mutex = kernel32.CreateMutexW
+        create_mutex.argtypes = (ctypes.c_void_p, ctypes.c_bool, ctypes.c_wchar_p)
+        create_mutex.restype = ctypes.c_void_p
+        handle = create_mutex(None, False, WIDGET_MUTEX_NAME)
+        if not handle:
+            return None
+        if kernel32.GetLastError() == _ERROR_ALREADY_EXISTS:
+            kernel32.CloseHandle(handle)
+            return None
+        return handle
+    except (AttributeError, OSError):
+        return None
+
+
+def release_windows_widget_mutex(handle: int) -> None:
+    try:
+        ctypes.windll.kernel32.CloseHandle(handle)
+    except (AttributeError, OSError):
+        pass
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
         description="Open the independent draggable Quota Orb desktop widget."
@@ -2547,7 +2575,14 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
     if not math.isfinite(args.refresh_seconds) or args.refresh_seconds <= 0:
         parser.error("--refresh-seconds must be finite and greater than zero")
-    run_widget(state_path=args.state_file, refresh_seconds=args.refresh_seconds)
+    mutex_handle = acquire_windows_widget_mutex() if os.name == "nt" else None
+    if os.name == "nt" and mutex_handle is None:
+        return
+    try:
+        run_widget(state_path=args.state_file, refresh_seconds=args.refresh_seconds)
+    finally:
+        if mutex_handle is not None:
+            release_windows_widget_mutex(mutex_handle)
 
 
 if __name__ == "__main__":

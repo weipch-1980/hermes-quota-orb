@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.1
+
+- Added the explicit `--autostart-widget` MCP option for Windows clients. It launches the bundled widget fail-closed before MCP serving and never starts a GUI by default.
+- Added a Windows local named mutex so repeated MCP starts keep one desktop orb instance.
+
 ## 0.5.0
 
 - Added an official, read-only Codex rate-limit source through the experimental local app-server `account/rateLimits/read` method. The source exposes no independent REST API, sends no credentials, reads no credential files, and fails closed to `Unavailable`.
