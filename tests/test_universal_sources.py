@@ -539,7 +539,7 @@ class CodexAppServerSourceTests(unittest.TestCase):
         ])
         self.assertEqual(
             requests[0]["params"]["clientInfo"],
-            {"name": "quota-orb", "version": "0.5.0"},
+            {"name": "quota-orb", "version": "0.5.1"},
         )
         self.assertEqual(requests[-1]["id"], 2)
         self.assertNotIn("auth", json.dumps(requests).lower())

@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 import argparse
+import ntpath
+import os
 from pathlib import Path
+import subprocess
+import sys
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
@@ -18,6 +22,29 @@ _READ_ONLY = ToolAnnotations(
     idempotentHint=True,
     openWorldHint=False,
 )
+
+
+def launch_desktop_widget() -> bool:
+    """Start the optional Windows widget without letting its failure stop MCP."""
+
+    if os.name != "nt":
+        return False
+    executable = ntpath.join(ntpath.dirname(sys.executable), "quota-orb-widget.exe")
+    if not os.path.isfile(executable):
+        return False
+    try:
+        subprocess.Popen(
+            [executable, "--refresh-seconds", "15"],
+            shell=False,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            close_fds=True,
+            creationflags=0x00000008 | 0x08000000,
+        )
+    except OSError:
+        return False
+    return True
 
 
 def supported_sources() -> dict[str, Any]:
@@ -276,7 +303,10 @@ def main(argv: list[str] | None = None) -> None:
     )
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8787)
+    parser.add_argument("--autostart-widget", action="store_true")
     args = parser.parse_args(argv)
+    if args.autostart_widget:
+        launch_desktop_widget()
     create_server(host=args.host, port=args.port).run(transport=args.transport)
 
 

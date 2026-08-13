@@ -6,12 +6,13 @@ import sys
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 
 ROOT = Path(__file__).parents[1]
 sys.path.insert(0, str(ROOT))
 
-from quota_orb.mcp_server import ORB_RESOURCE_URI, create_server
+from quota_orb.mcp_server import ORB_RESOURCE_URI, create_server, launch_desktop_widget, main
 
 
 class StaticSource:
@@ -234,6 +235,75 @@ if (unknown.remaining !== null) throw new Error('unknown became a value')
 """
         result = subprocess.run(["node", "-e", script], text=True, capture_output=True)
         self.assertEqual(result.returncode, 0, result.stderr)
+
+
+class McpServerCliTests(unittest.TestCase):
+    def test_autostart_flag_launches_widget_before_running_mcp(self):
+        server = MagicMock()
+        with patch("quota_orb.mcp_server.launch_desktop_widget", return_value=True) as launch, patch(
+            "quota_orb.mcp_server.create_server", return_value=server
+        ) as create:
+            main(["--autostart-widget", "--transport", "stdio"])
+
+        launch.assert_called_once_with()
+        create.assert_called_once_with(host="127.0.0.1", port=8787)
+        server.run.assert_called_once_with(transport="stdio")
+
+    def test_autostart_failure_does_not_block_mcp(self):
+        server = MagicMock()
+        with patch("quota_orb.mcp_server.launch_desktop_widget", return_value=False) as launch, patch(
+            "quota_orb.mcp_server.create_server", return_value=server
+        ) as create:
+            main(["--autostart-widget"])
+
+        launch.assert_called_once_with()
+        create.assert_called_once_with(host="127.0.0.1", port=8787)
+        server.run.assert_called_once_with(transport="stdio")
+
+    def test_default_cli_does_not_launch_widget(self):
+        server = MagicMock()
+        with patch("quota_orb.mcp_server.launch_desktop_widget") as launch, patch(
+            "quota_orb.mcp_server.create_server", return_value=server
+        ):
+            main([])
+
+        launch.assert_not_called()
+
+    def test_widget_launcher_uses_current_venv_executable_and_detached_contract(self):
+        process = MagicMock()
+        with patch("quota_orb.mcp_server.os.name", "nt"), patch(
+            "quota_orb.mcp_server.sys.executable", r"C:\venv\Scripts\python.exe"
+        ), patch("quota_orb.mcp_server.os.path.isfile", return_value=True), patch(
+            "quota_orb.mcp_server.subprocess.Popen", return_value=process
+        ) as popen:
+            self.assertTrue(launch_desktop_widget())
+
+        command, = popen.call_args.args
+        self.assertEqual(command, [r"C:\venv\Scripts\quota-orb-widget.exe", "--refresh-seconds", "15"])
+        self.assertFalse(popen.call_args.kwargs.get("shell", False))
+        self.assertIs(popen.call_args.kwargs["stdin"], subprocess.DEVNULL)
+        self.assertIs(popen.call_args.kwargs["stdout"], subprocess.DEVNULL)
+        self.assertIs(popen.call_args.kwargs["stderr"], subprocess.DEVNULL)
+        self.assertTrue(popen.call_args.kwargs["close_fds"])
+        self.assertEqual(popen.call_args.kwargs["creationflags"], 0x00000008 | 0x08000000)
+
+    def test_widget_launcher_fails_closed_without_windows_executable_or_when_popen_fails(self):
+        with patch("quota_orb.mcp_server.os.name", "posix"), patch(
+            "quota_orb.mcp_server.subprocess.Popen"
+        ) as popen:
+            self.assertFalse(launch_desktop_widget())
+        popen.assert_not_called()
+
+        with patch("quota_orb.mcp_server.os.name", "nt"), patch(
+            "quota_orb.mcp_server.os.path.isfile", return_value=False
+        ), patch("quota_orb.mcp_server.subprocess.Popen") as popen:
+            self.assertFalse(launch_desktop_widget())
+        popen.assert_not_called()
+
+        with patch("quota_orb.mcp_server.os.name", "nt"), patch(
+            "quota_orb.mcp_server.os.path.isfile", return_value=True
+        ), patch("quota_orb.mcp_server.subprocess.Popen", side_effect=OSError("blocked")):
+            self.assertFalse(launch_desktop_widget())
 
 
 if __name__ == "__main__":

@@ -47,6 +47,8 @@ class PlatformAdapterTests(unittest.TestCase):
         self.assertIn("local usage", text)
         self.assertIn("fixed user Codex app-server path", text)
         self.assertIn("color-key-safe boundary", text)
+        self.assertIn("--autostart-widget", text)
+        self.assertIn("one orb instance", text)
         self.assertNotIn("cookie", text.lower())
         self.assertNotIn("/usage reset", text)
 
@@ -100,6 +102,7 @@ class PlatformAdapterTests(unittest.TestCase):
             r"--env QUOTA_ORB_CODEX_EXE=C:\Users\admin\.codex\plugins\.plugin-appserver\codex.exe",
             readme,
         )
+        self.assertIn("--autostart-widget", readme)
 
     def test_google_adapter_covers_current_and_transitioning_official_hosts(self):
         readme = (ROOT / "adapters" / "gemini" / "README.md").read_text(encoding="utf-8")
@@ -267,8 +270,8 @@ class PlatformAdapterTests(unittest.TestCase):
         from quota_orb import __version__
 
         text = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
-        self.assertIn('version = "0.5.0"', text)
-        self.assertEqual(__version__, "0.5.0")
+        self.assertIn('version = "0.5.1"', text)
+        self.assertEqual(__version__, "0.5.1")
         self.assertIn('"mcp==1.28.1"', text)
         self.assertIn('quota-orb-mcp = "quota_orb.mcp_server:main"', text)
         self.assertIn('quota-orb-widget = "quota_orb.desktop_widget:main"', text)

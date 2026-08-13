@@ -1,4 +1,4 @@
-# Quota Orb v0.5.0
+# Quota Orb v0.5.1
 
 A local-first, read-only quota system for AI coding agents, MCP-compatible clients, Hermes Desktop, and an independent Windows desktop widget. It shows:
 
@@ -18,15 +18,16 @@ Quota Orb is an independent community project, is not an official Nous Research 
 ![Quota Orb preview](docs/quota-orb-preview.png)
 
 ![Hermes](https://img.shields.io/badge/Hermes-v0.20.0%2B-gold)
-![Quota Orb](https://img.shields.io/badge/Quota%20Orb-v0.5.0-emerald)
+![Quota Orb](https://img.shields.io/badge/Quota%20Orb-v0.5.1-emerald)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
-## Why v0.5.0
+## Why v0.5.1
 
-Quota Orb v0.5.0 adds an official Codex rate-limit source and a more polished Windows crystal orb without weakening its conservative, read-only data model. Its main advantages are:
+Quota Orb v0.5.1 adds an explicit Windows MCP widget autostart option while retaining the official Codex rate-limit source and conservative, read-only data model. Its main advantages are:
 
 - **Official Codex rate limits, read only:** the local source calls the experimental Codex app-server method `account/rateLimits/read`; it exposes no independent REST API, sends no credentials, reads no credential files, and fails closed to `Unavailable`.
 - **A refined Windows crystal orb:** the visible liquid area tracks the percentage, two natural waves animate independently, and the color-key-safe circular frame has no external shadow or fringe.
+- **Explicit MCP autostart:** Windows clients can add `--autostart-widget`; missing executables or launch failures leave MCP serving uninterrupted, and repeated starts retain one orb through a local named mutex.
 - **Professional details without rewriting evidence:** fixed panel labels are available in English and Simplified Chinese, while provider and quota-window labels remain verbatim. Snapshot collection runs in the background so slow sources do not freeze the widget.
 - **Truth-only level selection:** the orb uses the lowest valid subscription window; an explicit Token allowance drives it only when no valid subscription window exists. Real 0% remains distinct from Unknown.
 - **Fail-closed delivery:** installers and builders retain their path-safety controls, and native CI command failures now stop the release workflow immediately.
@@ -138,6 +139,14 @@ After installing the Python package, run:
 quota-orb-widget
 ```
 
+For a Windows client that loads the local MCP server, add the explicit opt-in flag to its MCP command:
+
+```powershell
+python -m quota_orb.mcp_server --transport stdio --autostart-widget
+```
+
+This starts the widget when that MCP process loads. Starting the MCP more than once does not create multiple orbs: the widget holds one Windows local named mutex. Non-Windows clients and MCP commands without the flag never start a GUI.
+
 The borderless crystal orb stays above applications and animates layered liquid waves unless Windows reduced-motion is enabled. Its Windows color-key display frame uses a clean circular boundary without an external shadow or alpha fringe. Left-click (or focus it and press Enter/Space) to toggle one read-only details panel; drag begins only after the 4-pixel threshold, so dragging never opens the panel. The widget selects Simplified Chinese for Windows `zh` UI locales and English otherwise; only fixed UI labels are translated, while provider, model, source, and quota-window labels remain unchanged. The panel shows the current snapshot identity, quota windows, API quota, local usage, and Token billing without merging actual, estimated, or unavailable values. Snapshot refresh runs in a single background worker; a failed refresh retains the latest verified snapshot and reports the failure. Escape or Close dismisses only the panel; right-click the orb to exit, while Escape on the orb exits it.
 
 The orb saves its virtual-screen position on drag release and restores/clamps it against current Windows monitor work areas after restart, monitor removal, resolution, or DPI changes. Position state contains only `x` and `y` at `%LOCALAPPDATA%\QuotaOrb\widget-position.json`; it stores no account or authentication data. Startup-with-Windows is not enabled.
@@ -197,10 +206,10 @@ python scripts/build_universal_package.py
 Outputs:
 
 ```text
-dist/quota-orb-skill-v0.5.0.zip
-dist/quota-orb-skill-v0.5.0.sha256
-dist/quota-orb-universal-v0.5.0.zip
-dist/quota-orb-universal-v0.5.0.sha256
+dist/quota-orb-skill-v0.5.1.zip
+dist/quota-orb-skill-v0.5.1.sha256
+dist/quota-orb-universal-v0.5.1.zip
+dist/quota-orb-universal-v0.5.1.sha256
 ```
 
 Both archives use sorted entries, fixed timestamps, fixed file modes, no-follow source reads, and exclude `__pycache__` directories and `*.pyc` files. Both builders fail closed when a source tree, output directory, or any existing output ancestor is a symlink, junction, or reparse point.

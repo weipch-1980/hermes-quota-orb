@@ -15,7 +15,7 @@ from _windows_output_parent_swap import WindowsOutputDirectoryParentSwap
 
 ROOT = Path(__file__).parents[1]
 SCRIPT = ROOT / "scripts" / "build_skill_package.py"
-PACKAGE_VERSION = "0.5.0"
+PACKAGE_VERSION = "0.5.1"
 PACKAGE_ARCHIVE = f"quota-orb-skill-v{PACKAGE_VERSION}.zip"
 
 

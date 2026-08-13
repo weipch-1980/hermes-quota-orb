@@ -1509,6 +1509,36 @@ class DesktopWidgetLogicTests(unittest.TestCase):
                 main(["--refresh-seconds", "nan"])
         run_widget.assert_not_called()
 
+    def test_windows_existing_mutex_exits_without_starting_widget(self):
+        with patch("quota_orb.desktop_widget.os.name", "nt"), patch(
+            "quota_orb.desktop_widget.acquire_windows_widget_mutex", return_value=None
+        ), patch("quota_orb.desktop_widget.run_widget") as run_widget:
+            main([])
+        run_widget.assert_not_called()
+
+    def test_windows_mutex_is_released_after_widget_exits(self):
+        handle = 123
+        with patch("quota_orb.desktop_widget.os.name", "nt"), patch(
+            "quota_orb.desktop_widget.acquire_windows_widget_mutex", return_value=handle
+        ) as acquire, patch("quota_orb.desktop_widget.release_windows_widget_mutex") as release, patch(
+            "quota_orb.desktop_widget.run_widget"
+        ) as run_widget:
+            main(["--refresh-seconds", "15"])
+        acquire.assert_called_once_with()
+        run_widget.assert_called_once()
+        release.assert_called_once_with(handle)
+
+    def test_windows_mutex_is_released_when_widget_raises(self):
+        handle = 123
+        with patch("quota_orb.desktop_widget.os.name", "nt"), patch(
+            "quota_orb.desktop_widget.acquire_windows_widget_mutex", return_value=handle
+        ), patch("quota_orb.desktop_widget.release_windows_widget_mutex") as release, patch(
+            "quota_orb.desktop_widget.run_widget", side_effect=RuntimeError("Tk failed")
+        ):
+            with self.assertRaisesRegex(RuntimeError, "Tk failed"):
+                main([])
+        release.assert_called_once_with(handle)
+
     def test_context_menu_always_releases_grab(self):
         class Menu:
             released = False

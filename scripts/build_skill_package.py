@@ -11,7 +11,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 
-VERSION = "0.5.0"
+VERSION = "0.5.1"
 PACKAGE_NAME = f"quota-orb-skill-v{VERSION}"
 ARCHIVE_ROOT = "quota-orb"
 FIXED_TIMESTAMP = (1980, 1, 1, 0, 0, 0)

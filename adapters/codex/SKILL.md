@@ -21,7 +21,7 @@ Use this Skill in Codex, Claude Code, Antigravity or Gemini CLI, Cursor, GitHub 
 
 ## Desktop Widget
 
-On Windows, the optional `quota-orb-widget` command opens the independent draggable desktop orb. Explicit snapshot, Hermes, or Codex configuration wins; otherwise the widget checks only the fixed user Codex app-server path and never searches `PATH` or reads credentials. Fixed labels follow the Windows system language (`zh` uses Simplified Chinese; other locales use English), and the color-key-safe boundary suppresses external shadow or fringe. Its liquid level uses the lowest available subscription or Token-allowance percentage: green at 50% or above, yellow below 50%, and red below 30%. Unknown remains neutral.
+On Windows, the optional `quota-orb-widget` command opens the independent draggable desktop orb. When a local MCP command explicitly includes `--autostart-widget`, loading that MCP starts the widget automatically; it is opt-in and the Windows local named mutex keeps one orb instance. Explicit snapshot, Hermes, or Codex configuration wins; otherwise the widget checks only the fixed user Codex app-server path and never searches `PATH` or reads credentials. Fixed labels follow the Windows system language (`zh` uses Simplified Chinese; other locales use English), and the color-key-safe boundary suppresses external shadow or fringe. Its liquid level uses the lowest available subscription or Token-allowance percentage: green at 50% or above, yellow below 50%, and red below 30%. Unknown remains neutral.
 
 ## Safety
 
